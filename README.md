@@ -14,6 +14,14 @@
 
 ---
 
+<p align="center">
+  <img src="tiagent_mcp_server.jpg" alt="TIAgent MCP Server UI" width="900">
+  <br>
+  <em>TIAgent MCP Server — Kullanıcı Arayüzü, Canlı Onay Çubuğu ve Siemens TIA Portal Entegrasyonu / User Interface & Live Approval Workflow</em>
+</p>
+
+---
+
 <a name="-türkçe-dokümantasyon"></a>
 ## 🇹🇷 Türkçe Dokümantasyon
 
