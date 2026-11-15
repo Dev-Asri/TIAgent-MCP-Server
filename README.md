@@ -6,9 +6,11 @@
 [![TIA Portal](https://img.shields.io/badge/Siemens%20TIA%20Portal-V14%20SP1%20--%20V21-orange.svg)]()
 [![MCP](https://img.shields.io/badge/Protocol-Model%20Context%20Protocol%20(MCP)-blueviolet.svg)]()
 [![OpenAPI](https://img.shields.io/badge/API-OpenAPI%203.0%20%2F%20Swagger-green.svg)]()
+[![Demo Video](https://img.shields.io/badge/Demo%20Video-Watch%20MP4-red?style=flat&logo=youtube)](https://github.com/Dev-Asri/TIAgent-MCP-Server/blob/main/TIAgentMcpServer.mp4)
+[![Release](https://img.shields.io/badge/Release-v1.0.0-blue)](https://github.com/Dev-Asri/TIAgent-MCP-Server/releases/tag/v1.0.0)
 
 > **Quick Language / Hızlı Dil Seçimi:**  
-> 🇹🇷 **[Türkçe Dokümantasyon](#-türkçe-dokümantasyon)** | 🇬🇧 **[English Documentation](#-english-documentation)**
+> 🇹🇷 **[Türkçe Dokümantasyon](#-türkçe-dokümantasyon)** | 🇬🇧 **[English Documentation](#-english-documentation)** | 🎬 **[Demo Video / Tanıtım](#-tanıtım-ve-demo-videosu)**
 
 ---
 
@@ -19,6 +21,16 @@
 **TIAgent MCP Server**, Siemens TIA Portal (V14 SP1 – V21) mühendislik yazılımı ile modern yapay zekâ (AI) ajanları (Cursor, VS Code / GitHub Copilot, Claude Code, OpenCode, Cline, Roo Code, Hermes, LangChain, AutoGen, CrewAI vb.) arasında evrensel köprü kuran yüksek performanslı bir **WPF (.NET Framework 4.8, x64)** masaüstü uygulaması ve **MCP (Model Context Protocol)** sunucusudur.
 
 Uygulama, yerel HTTP REST API (`http://localhost:19520`), stdio MCP sunucusu (`tiagent_mcp.py`), tek satırlık CLI (`tiagent.bat` / `tiagent.ps1`) ve dosya tabanlı Hot-Folder (`Packages/Inbox`) üzerinden yapay zekâ modellerine TIA Portal projesini okuma, Ladder (LAD) / SCL blokları üretme, PLC Tag tabloları ve Global/Instance DB'ler oluşturma, donanım yapılandırma (PROFINET sürücüler, GSDML modülleri, PLC rack modülleri) ve Technology Object (TO Hareket Eksenleri, PID) entegrasyonu yapma yeteneği kazandırır.
+
+---
+
+<a name="-tanıtım-ve-demo-videosu"></a>
+### 🎬 Tanıtım ve Canlı Demo Videosu
+TIAgent MCP Server'ın Siemens TIA Portal ile nasıl etkileşime girdiğini, yapay zekâ ajanlarından gelen komutların Ladder devresi ve tag tablolarına nasıl dönüştüğünü, onay mekanizmasını ve canlı PLC entegrasyonunu izleyebilirsiniz:
+
+- 📺 **[GitHub Üzerinde İzle (TIAgentMcpServer.mp4)](https://github.com/Dev-Asri/TIAgent-MCP-Server/blob/main/TIAgentMcpServer.mp4)** *(GitHub web oynatıcısında hemen oynatılır)*
+- 📥 **[Doğrudan İndir (13.4 MB MP4)](https://github.com/Dev-Asri/TIAgent-MCP-Server/raw/main/TIAgentMcpServer.mp4)**
+- 📦 **[v1.0.0 Release Sayfasından İndir](https://github.com/Dev-Asri/TIAgent-MCP-Server/releases/tag/v1.0.0)**
 
 ---
 
@@ -169,6 +181,15 @@ Cursor veya VS Code'u yeniden başlattığınızda yapay zekâ ajanınız `tiage
 **TIAgent MCP Server** is an enterprise-grade **WPF (.NET Framework 4.8, x64)** desktop application and **Model Context Protocol (MCP)** server that bridges Siemens TIA Portal (V14 SP1 – V21) engineering software with modern Artificial Intelligence (AI) agents (Cursor, VS Code / GitHub Copilot, Claude Code, OpenCode, Cline, Roo Code, Hermes, LangChain, AutoGen, CrewAI, etc.).
 
 Via its local HTTP REST API (`http://localhost:19520`), stdio MCP server (`tiagent_mcp.py`), unified CLI (`tiagent.bat` / `tiagent.ps1`), and hot-folder watcher (`Packages/Inbox`), TIAgent empowers AI models to inspect TIA Portal projects, generate and compile Ladder (LAD) and SCL blocks, create structured DataBlocks and PLC Tag tables, configure PROFINET / GSDML hardware devices, plug rack expansion modules, and bind Motion Control Technology Objects (Axes / PID).
+
+---
+
+### 🎬 Promo & Live Demo Video
+Watch TIAgent MCP Server in action—generating Ladder logic, managing PLC tags, configuring PROFINET hardware, and interacting live with Siemens TIA Portal:
+
+- 📺 **[Watch on GitHub (TIAgentMcpServer.mp4)](https://github.com/Dev-Asri/TIAgent-MCP-Server/blob/main/TIAgentMcpServer.mp4)** *(Plays directly in GitHub's media player)*
+- 📥 **[Direct Download (13.4 MB MP4)](https://github.com/Dev-Asri/TIAgent-MCP-Server/raw/main/TIAgentMcpServer.mp4)**
+- 📦 **[Download from v1.0.0 Release Page](https://github.com/Dev-Asri/TIAgent-MCP-Server/releases/tag/v1.0.0)**
 
 ---
 
