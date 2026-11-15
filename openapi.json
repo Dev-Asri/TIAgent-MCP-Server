@@ -1,0 +1,382 @@
+{
+  "openapi": "3.0.1",
+  "info": {
+    "title": "TIAgent - Siemens TIA Portal Openness Bridge API",
+    "description": "Universal AI Agent bridge for Siemens TIA Portal (V14 SP1 - V21). Compatible with Antigravity, Cursor, GitHub Copilot, OpenCode, Hermes, Claude Code, and LangChain.",
+    "version": "1.2.0"
+  },
+  "servers": [
+    {
+      "url": "http://localhost:19520",
+      "description": "Local TIAgent Bridge HTTP Server"
+    }
+  ],
+  "paths": {
+    "/api/status": {
+      "get": {
+        "summary": "Get TIA Portal and TIAgent Status",
+        "description": "Returns current TIA Portal connection status, active project, PLC CPU name, block and tag counts, import mode, and recent log steps.",
+        "responses": {
+          "200": {
+            "description": "Current status snapshot",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatusResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/dbs": {
+      "get": {
+        "summary": "List All DataBlocks (DBs)",
+        "description": "Returns the exact list and count of all DataBlocks (DBs) currently in the active TIA Portal project. Use this before updating or deleting DBs.",
+        "responses": {
+          "200": {
+            "description": "List of DataBlocks",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": { "type": "boolean" },
+                    "count": { "type": "integer" },
+                    "dataBlocks": { "type": "array", "items": { "type": "string" } }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/project": {
+      "get": {
+        "summary": "Get Complete Project Overview",
+        "description": "Returns all DataBlocks, program blocks (OB, FB, FC), PLC tag tables, and tags from the active project.",
+        "responses": {
+          "200": {
+            "description": "Complete project tree and overview",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatusResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/package": {
+      "post": {
+        "summary": "Import Full PLC Package (LAD, SCL, DB, Tags, Hardware)",
+        "description": "Imports a complete package into TIA Portal. Includes PLC tags, Global/Instance DBs, Ladder (SimaticML XML) or SCL blocks, and PROFINET/GSD hardware devices.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BridgePackageRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Import and compilation result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommandResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/command": {
+      "post": {
+        "summary": "Execute Natural Language or AI Command",
+        "description": "Processes a natural language prompt (e.g. 'delete DB_Test', 'add motor circuit') or specific action through TIAgent.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BridgeCommandRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Execution result"
+          }
+        }
+      }
+    },
+    "/api/delete": {
+      "post": {
+        "summary": "Delete PLC Blocks, Tag Tables, or Hardware Devices",
+        "description": "Safely removes specified blocks, DBs, tag tables, technology objects, or hardware devices from the TIA Portal project.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeleteRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Deletion result and subsequent compile status"
+          }
+        }
+      }
+    },
+    "/api/gsd": {
+      "get": {
+        "summary": "Search Installed GSDML Device Catalog",
+        "description": "Queries TIA Portal's installed GSD/GSDML catalog for drives, I/O devices, and telegram modules (e.g. SINAMICS V90, G120, ET200SP).",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "description": "Keyword to search (e.g. 'v90', 'g120', 'telegram 3')",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Matching GSDML devices and modules"
+          }
+        }
+      }
+    },
+    "/api/hardware": {
+      "get": {
+        "summary": "Inspect Project Hardware and PLC Rack Modules",
+        "description": "Returns all hardware devices, PLC racks, expansion slots, and plugged modules (SM, SB, CM) in the active TIA Portal project.",
+        "responses": {
+          "200": {
+            "description": "List of devices, slots, and modules"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "StatusResponse": {
+        "type": "object",
+        "properties": {
+          "ok": { "type": "boolean" },
+          "timestamp": { "type": "string" },
+          "tiaVersion": { "type": "string" },
+          "isTiaConnected": { "type": "boolean" },
+          "projectName": { "type": "string" },
+          "projectPath": { "type": "string" },
+          "plcName": { "type": "string" },
+          "importMode": { "type": "string", "enum": ["Manuel", "Otomatik"] },
+          "existingDbsCount": { "type": "integer" },
+          "existingBlocksCount": { "type": "integer" },
+          "existingTagsCount": { "type": "integer" },
+          "dataBlocks": { "type": "array", "items": { "type": "string" } },
+          "programBlocks": { "type": "array", "items": { "type": "object" } },
+          "tagTables": { "type": "array", "items": { "type": "string" } },
+          "recentSteps": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        }
+      },
+      "BridgeCommandRequest": {
+        "type": "object",
+        "properties": {
+          "Action": { "type": "string", "enum": ["generate", "package", "approve", "reject", "delete", "status"] },
+          "Prompt": { "type": "string" },
+          "AutoApprove": { "type": "boolean" },
+          "Language": { "type": "string", "enum": ["LAD", "SCL"] },
+          "CustomSclCode": { "type": "string" }
+        }
+      },
+      "BridgePackageRequest": {
+        "type": "object",
+        "properties": {
+          "Action": { "type": "string", "default": "package" },
+          "AutoApprove": { "type": "boolean", "default": true },
+          "CustomPackage": {
+            "$ref": "#/components/schemas/TiaPackage"
+          }
+        },
+        "required": ["CustomPackage"]
+      },
+      "TiaPackage": {
+        "type": "object",
+        "properties": {
+          "PackageName": { "type": "string" },
+          "Title": { "type": "string" },
+          "Description": { "type": "string" },
+          "Language": { "type": "string", "enum": ["LAD", "SCL"] },
+          "TagTableName": { "type": "string" },
+          "PlcIpAddress": { "type": "string" },
+          "Tags": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/PlcTagEntry" }
+          },
+          "DataBlocks": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/PlcDbEntry" }
+          },
+          "PlcModules": {
+            "type": "array",
+            "description": "Rack expansion modules to plug into the PLC (SM, SB, CM)",
+            "items": { "$ref": "#/components/schemas/PlcModuleEntry" }
+          },
+          "Blocks": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/PlcBlockEntry" }
+          },
+          "HardwareDevices": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/HardwareDeviceEntry" }
+          },
+          "TechnologyObjects": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/TechnologyObjectEntry" }
+          },
+          "DevicesToDelete": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "TechnologyObjectsToDelete": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        }
+      },
+      "PlcTagEntry": {
+        "type": "object",
+        "properties": {
+          "Name": { "type": "string" },
+          "DataType": { "type": "string" },
+          "LogicalAddress": { "type": "string" },
+          "Comment": { "type": "string" }
+        },
+        "required": ["Name", "DataType", "LogicalAddress"]
+      },
+      "PlcModuleEntry": {
+        "type": "object",
+        "properties": {
+          "Name": { "type": "string", "description": "Module name or identifier (e.g. 'SM1223_DI16_DQ16')" },
+          "TypeIdentifier": { "type": "string", "description": "Siemens MLFB or generic name (e.g. '16DI 16DQ', 'SM 1223', 'DI 16/DQ 16 x24VDC ST', '6ES7 223-1BL32-0XB0')" },
+          "Position": { "type": "integer", "description": "Rack slot number (e.g. 2, 3, etc.). If omitted or 0, automatically finds first available slot." },
+          "InputStartAddress": { "type": "integer" },
+          "OutputStartAddress": { "type": "integer" }
+        },
+        "required": ["Name"]
+      },
+      "PlcDbEntry": {
+        "type": "object",
+        "properties": {
+          "Name": { "type": "string" },
+          "DbType": { "type": "string", "enum": ["GlobalDB", "InstanceDB"] },
+          "Comment": { "type": "string" },
+          "Members": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/PlcDbMember" }
+          }
+        },
+        "required": ["Name", "Members"]
+      },
+      "PlcDbMember": {
+        "type": "object",
+        "properties": {
+          "Name": { "type": "string" },
+          "DataType": { "type": "string" },
+          "StartValue": { "type": "string" },
+          "Comment": { "type": "string" }
+        },
+        "required": ["Name", "DataType"]
+      },
+      "PlcBlockEntry": {
+        "type": "object",
+        "properties": {
+          "Name": { "type": "string" },
+          "BlockType": { "type": "string", "enum": ["OB", "FB", "FC"] },
+          "BlockNumber": { "type": "integer" },
+          "Language": { "type": "string", "enum": ["LAD", "SCL"] },
+          "Code": { "type": "string" },
+          "SimaticMlXml": { "type": "string" },
+          "Comment": { "type": "string" }
+        },
+        "required": ["Name", "BlockType", "Language"]
+      },
+      "HardwareDeviceEntry": {
+        "type": "object",
+        "properties": {
+          "Name": { "type": "string" },
+          "GsdKeyword": { "type": "string" },
+          "IpAddress": { "type": "string" },
+          "SubnetMask": { "type": "string" },
+          "ConnectToPlcIoSystem": { "type": "boolean" },
+          "ReplaceIfExists": { "type": "boolean" },
+          "Modules": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "Name": { "type": "string" },
+                "GsdModuleKeyword": { "type": "string" },
+                "Position": { "type": "integer" },
+                "InputStartAddress": { "type": "integer" },
+                "OutputStartAddress": { "type": "integer" }
+              }
+            }
+          }
+        },
+        "required": ["Name"]
+      },
+      "TechnologyObjectEntry": {
+        "type": "object",
+        "properties": {
+          "Name": { "type": "string" },
+          "Type": { "type": "string" },
+          "DriveDeviceName": { "type": "string" },
+          "ReplaceIfExists": { "type": "boolean" },
+          "Parameters": { "type": "object" }
+        },
+        "required": ["Name", "Type"]
+      },
+      "DeleteRequest": {
+        "type": "object",
+        "properties": {
+          "Action": { "type": "string", "default": "delete" },
+          "BlocksToDelete": { "type": "array", "items": { "type": "string" } },
+          "TagTablesToDelete": { "type": "array", "items": { "type": "string" } },
+          "DevicesToDelete": { "type": "array", "items": { "type": "string" } },
+          "TechnologyObjectsToDelete": { "type": "array", "items": { "type": "string" } },
+          "ClearMainNetworks": { "type": "boolean" }
+        }
+      },
+      "CommandResult": {
+        "type": "object",
+        "properties": {
+          "ok": { "type": "boolean" },
+          "packageName": { "type": "string" },
+          "status": { "$ref": "#/components/schemas/StatusResponse" }
+        }
+      }
+    }
+  }
+}

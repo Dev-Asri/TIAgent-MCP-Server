@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "tiagent": {
+      "command": "python",
+      "args": [
+        "${workspaceFolder}/tiagent_mcp.py"
+      ],
+      "env": {}
+    }
+  }
+}

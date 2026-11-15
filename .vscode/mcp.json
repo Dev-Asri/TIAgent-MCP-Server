@@ -1,0 +1,11 @@
+{
+  "servers": {
+    "tiagent": {
+      "type": "stdio",
+      "command": "python",
+      "args": [
+        "${workspaceFolder}/tiagent_mcp.py"
+      ]
+    }
+  }
+}

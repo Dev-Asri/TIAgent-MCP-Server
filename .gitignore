@@ -1,0 +1,57 @@
+# Derleme çıktıları (Build outputs)
+[Bb]in/
+[Oo]bj/
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+
+# Visual Studio / IDE geçici dosyaları
+.vs/
+.idea/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+*.userprefs
+
+# Siemens TIA Portal Openness DLL'leri (Lisans gereği repoya dahil edilmez;
+# uygulama çalışma zamanında bilgisayarda kurulu lisanslı TIA Portal'dan otomatik yükler)
+**/Siemens.Engineering*.dll
+**/Siemens.Engineering*.xml
+**/Siemens.Engineering*.pdb
+PublicAPI/
+Lib/
+
+# Çalışma zamanı geçici log, paket, arşiv ve yedek klasörleri
+Backups/
+Packages/
+*.log
+err.txt
+out.txt
+crash.txt
+selected_version.txt
+selected_language.txt
+AiSettings.json
+*.zip
+*.tar.gz
+
+# TIA Portal proje ve arşiv dosyaları
+*.ap14
+*.ap15
+*.ap15_1
+*.ap16
+*.ap17
+*.ap18
+*.ap19
+*.ap20
+*.ap21
+*.zap14
+*.zap15
+*.zap15_1
+*.zap16
+*.zap17
+*.zap18
+*.zap19
+*.zap20
+*.zap21

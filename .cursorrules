@@ -1,0 +1,40 @@
+# Cursor AI Rules for TIAgent (Siemens TIA Portal Integration)
+
+You are connected to **TIAgent**, a bridge application between AI agents and Siemens TIA Portal (V14 SP1 to V21).
+TIAgent runs locally on `http://localhost:19520` or via Model Context Protocol (MCP) server `tiagent_mcp.py`.
+
+## Communication Channels
+
+### 1. Model Context Protocol (MCP) - Preferred
+If MCP is active, use the native tools:
+- `tiagent_status()`: Query current project, PLC name, DB & block & tag lists and counts, last compilation result.
+- `tiagent_list_dbs()`: Get exact list of all DataBlocks (DBs) in the active project.
+- `tiagent_get_project()`: Get complete project overview (DBs, OB/FB/FC blocks, tag tables, tags).
+- `tiagent_get_hardware()`: Inspect all hardware devices, PLC racks, expansion slots, and plugged modules.
+- `tiagent_add_module(Name, TypeIdentifier, Position)`: Plug an I/O or communication module (e.g. '16DI 16DQ', 'SM 1223', 'DI 16/DQ 16 x24VDC ST') into the PLC rack.
+- `tiagent_import_package(pkg)`: Import Ladder (SimaticML XML) or SCL blocks, Global/Instance DBs, PLC tags, and hardware devices/modules.
+- `tiagent_send_command(prompt)`: Send natural language command to TIA Portal (e.g. 'PLC ye 16I 16Q modul ekle', 'DB_V90 sil', 'projedeki tum db leri sil').
+- `tiagent_delete(blocks, tags, devices)`: Clean up blocks or hardware. Use `BlocksToDelete=['*']` to delete all DBs, or pass exact DB names.
+- `tiagent_search_gsd(query)`: Search installed GSDML device catalog.
+
+### 2. HTTP REST API (Fallback via curl or PowerShell)
+- **Check Status & DBs**: `GET http://localhost:19520/api/status`
+- **List All DBs**: `GET http://localhost:19520/api/dbs`
+- **Full Project Overview**: `GET http://localhost:19520/api/project`
+- **Hardware & Modules**: `GET http://localhost:19520/api/hardware`
+- **Send Package**: `POST http://localhost:19520/api/package` with JSON body `{ "Action": "package", "AutoApprove": true, "CustomPackage": { ... } }` or raw package JSON
+- **Natural Language Command**: `POST http://localhost:19520/api/command` with `{ "Prompt": "PLC ye 16I 16Q modul ekle" }`
+- **Delete Elements**: `POST http://localhost:19520/api/delete` with `{ "BlocksToDelete": ["DB1"], "ClearMainNetworks": false }` (use `["*"]` to delete all DBs)
+- **OpenAPI / Swagger**: `GET http://localhost:19520/swagger.json`
+
+### 3. File-Based Hot-Folder (Offline / Sandboxed Fallback)
+If network requests fail, write your JSON package directly to:
+`Packages/Inbox/<package_name>.json`
+TIAgent will automatically detect, process, and output results to:
+`Packages/Outbox/<package_name>.json.result.json`
+
+## Code Guidelines
+- **Ladder (LAD)**: Must be formatted in valid Siemens SimaticML XML. Every contact/coil must have a unique `<Access>` node and unique UIds. Move parts require `<TemplateValue Name="Card" Type="Cardinality">1</TemplateValue>`.
+- **SCL**: Standard Siemens Structured Control Language with `VAR / END_VAR` interface definitions.
+- **DataBlocks**: Define `Members` with `Name`, `DataType` (Real, Bool, Int, Word, etc.), and `StartValue`.
+- **Always verify compilation**: After sending a package, query `GET /api/status` to ensure `recentSteps` reports `Durum: Success (Hata: 0)` or `Warning (Hata: 0)`.
