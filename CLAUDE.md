@@ -44,3 +44,8 @@ You can execute terminal commands using:
 .\tiagent.ps1 send <package.json>
 .\tiagent.ps1 compile
 ```
+
+## İsimlendirme Kuralı (Kesin Yasak)
+- Projede hiçbir şekilde hiçbir yerde eski isim ("Online" ve "Ladder" kelimeleri yan yana) GEÇMEYECEKTİR.
+- Kullanıcıya verilen yanıtlarda, bilgilendirme mesajlarında, arayüz metinlerinde, loglarda, komut başlıklarında (toolSummary), kodlarda, dosyalarda veya açıklamalarda bu ifade KESİNLİKLE KULLANILMAZ.
+- Projenin, yazılımın, servisin ve köprünün adı her zaman ve istisnasız yalnızca **TIAgent** veya **TIAgent MCP Server** olarak anılır.

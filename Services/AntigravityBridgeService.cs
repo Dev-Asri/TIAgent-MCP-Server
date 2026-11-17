@@ -123,9 +123,10 @@ namespace TIAgent.Services
                 _isListeningHttp = true;
                 Task.Run(() => TcpAcceptLoopAsync(_cts.Token));
             }
-            catch
+            catch (Exception ex)
             {
                 _isListeningHttp = false;
+                try { File.WriteAllText(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "bridge_startup.log"), ex.ToString()); } catch { }
             }
 
             WriteStatusFile();

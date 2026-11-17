@@ -13,3 +13,17 @@ Kullanıcının talimatında belirttiği role göre hareket edilir:
 ### 2. "Programcısın" Modu:
 - Kullanıcı **"Programcısın"** dediğinde TIAgent MCP Server yazılımının kendisinde (`TIAgentMCPServer.csproj`) kod düzenlemesi, hata düzeltmesi veya mimari değişiklikler yapılabilir.
 - Yapılan değişiklikler `dotnet build` ile derlenir ve uygulama yeniden başlatılır.
+
+## Tecrübe Havuzu & Hatasız Paket Hazırlama Kuralı (Ornekler/ Klasörü)
+
+1. **Önce Tecrübeyi Kontrol Et:**
+   - Yeni bir devre, blok, DB, tag veya paket hazırlamadan önce **MUTLAKA** `Ornekler/SimaticML_Ve_Paket_Tecrubeleri.md` ve `Ornekler/` klasöründeki çalışan şablonlar kontrol edilir.
+   - Paket; kültür (`en-US`), komut ismi (`NORM_X` için `Normalize`, `SCALE_X` için `Scale_X`), XML karakter kaçışları (`&lt;`, `&gt;`), analog word adresleme (`%IW64`, `%QW1000`) ve IEC zamanlayıcı standartlarına önceden tam uyumlu şekilde hazırlanır.
+
+2. **Hata ve Düzeltmeleri Tecrübeye Kaydet:**
+   - Paket gönderiminde veya TIA proje derlemesinde herhangi bir hata ile karşılaşıldığında ve bu hata çözüldüğünde; hatanın sebebi, çözümü ve kuralı anında `Ornekler/SimaticML_Ve_Paket_Tecrubeleri.md` dosyasına eklenerek güncellenir ve kalıcı tecrübe olarak saklanır.
+
+## İsimlendirme Kuralı (Kesin Yasak)
+- Projede hiçbir şekilde hiçbir yerde eski isim ("Online" ve "Ladder" kelimeleri yan yana) GEÇMEYECEKTİR.
+- Kullanıcıya verilen yanıtlarda, bilgilendirme mesajlarında, arayüz metinlerinde, loglarda, komut başlıklarında (toolSummary), kodlarda, dosyalarda veya açıklamalarda bu ifade KESİNLİKLE KULLANILMAZ.
+- Projenin, yazılımın, servisin ve köprünün adı her zaman ve istisnasız yalnızca **TIAgent** veya **TIAgent MCP Server** olarak anılır.

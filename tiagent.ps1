@@ -23,7 +23,7 @@ param(
 
 $BaseUrl = "http://localhost:19520"
 
-function Test-TIAgentOnline {
+function Test-TIAgentAlive {
     try {
         $res = Invoke-RestMethod -Uri "$BaseUrl/api/status" -Method Get -TimeoutSec 2 -ErrorAction Stop
         return $true

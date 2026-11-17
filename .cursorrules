@@ -38,3 +38,8 @@ TIAgent will automatically detect, process, and output results to:
 - **SCL**: Standard Siemens Structured Control Language with `VAR / END_VAR` interface definitions.
 - **DataBlocks**: Define `Members` with `Name`, `DataType` (Real, Bool, Int, Word, etc.), and `StartValue`.
 - **Always verify compilation**: After sending a package, query `GET /api/status` to ensure `recentSteps` reports `Durum: Success (Hata: 0)` or `Warning (Hata: 0)`.
+
+## İsimlendirme Kuralı (Kesin Yasak)
+- Projede hiçbir şekilde hiçbir yerde eski isim ("Online" ve "Ladder" kelimeleri yan yana) GEÇMEYECEKTİR.
+- Kullanıcıya verilen yanıtlarda, bilgilendirme mesajlarında, arayüz metinlerinde, loglarda, komut başlıklarında (toolSummary), kodlarda, dosyalarda veya açıklamalarda bu ifade KESİNLİKLE KULLANILMAZ.
+- Projenin, yazılımın, servisin ve köprünün adı her zaman ve istisnasız yalnızca **TIAgent** veya **TIAgent MCP Server** olarak anılır.

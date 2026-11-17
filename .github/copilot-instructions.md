@@ -20,3 +20,8 @@ When assisting the user with Siemens PLC development, TIA Portal projects, Ladde
    - Ensure every contact and coil has its own dedicated `<Access>` node.
    - Move instructions require `<TemplateValue Name="Card" Type="Cardinality">1</TemplateValue>`.
    - Always verify that compilation reports 0 errors (`Durum: Success` or `Warning (Hata: 0)`).
+
+## İsimlendirme Kuralı (Kesin Yasak)
+- Projede hiçbir şekilde hiçbir yerde eski isim ("Online" ve "Ladder" kelimeleri yan yana) GEÇMEYECEKTİR.
+- Kullanıcıya verilen yanıtlarda, bilgilendirme mesajlarında, arayüz metinlerinde, loglarda, komut başlıklarında (toolSummary), kodlarda, dosyalarda veya açıklamalarda bu ifade KESİNLİKLE KULLANILMAZ.
+- Projenin, yazılımın, servisin ve köprünün adı her zaman ve istisnasız yalnızca **TIAgent** veya **TIAgent MCP Server** olarak anılır.

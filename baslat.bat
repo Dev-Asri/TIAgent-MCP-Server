@@ -3,11 +3,11 @@ setlocal
 cd /d "%~dp0"
 title TIAgent MCP Server
 
-if not exist "%~dp0bin\Debug\net48\TIAgent.exe" (
+if not exist "%~dp0bin\Debug\net48\TIAgent MCP Server.exe" (
     echo ========================================================
-    echo   TIAgent.exe bulunamadi, proje derleniyor...
+    echo   TIAgent MCP Server.exe bulunamadi, proje derleniyor...
     echo ========================================================
-    dotnet build -c Debug
+    dotnet build "%~dp0TIAgentMCPServer.csproj" -c Debug
     if errorlevel 1 (
         echo.
         echo [HATA] Derleme basarisiz oldu!
@@ -18,5 +18,5 @@ if not exist "%~dp0bin\Debug\net48\TIAgent.exe" (
 
 echo [BILGI] TIAgent MCP Server baslatiliyor...
 cd /d "%~dp0bin\Debug\net48"
-start "" "TIAgent.exe"
+start "" "TIAgent MCP Server.exe"
 exit /b 0

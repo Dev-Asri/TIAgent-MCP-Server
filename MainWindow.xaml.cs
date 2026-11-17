@@ -36,19 +36,27 @@ namespace TIAgent
         private DispatcherTimer _approvalCountdownTimer;
         private int _approvalRemainingSeconds = 0;
         private bool _suppressVersionSelectionChange = false;
+        private bool _suppressProjectSelectionChange = false;
+        private bool _suppressLanguageSelectionChange = true;
+        private bool _suppressImportModeChanged = false;
+        private bool _isBridgeActive = true;
         private string _backupRootDir;
         private readonly System.Threading.SemaphoreSlim _connectLock = new System.Threading.SemaphoreSlim(1, 1);
+        private readonly List<(DateTime time, string textTr, string textEn)> _detailedLogEntries = new List<(DateTime, string, string)>();
 
         public MainWindow()
         {
             InitializeComponent();
             Title = "TIAgent MCP Server - asriakdeniz@gmail.com";
 
-            _backupRootDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Backups");
-            Directory.CreateDirectory(_backupRootDir);
+            try
+            {
+                _backupRootDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Backups");
+                Directory.CreateDirectory(_backupRootDir);
+            }
+            catch { }
 
             DgSteps.ItemsSource = _steps;
-            DgPackageTags.ItemsSource = _packageTags;
 
             _approvalCountdownTimer = new DispatcherTimer
             {
@@ -108,10 +116,15 @@ namespace TIAgent
             );
             _bridgeService.Start();
 
-            AddStep("AI", "TIAgent başlatıldı (AI Köprüsü: http://localhost:19520 & Packages/Inbox)", true);
+            LoadSavedWindowBounds();
+            LoadSavedTheme();
+            LoadSavedTopmost();
+            LoadSavedLanguage();
+            LoadSavedImportMode();
+            LoadSavedBridgeActive();
+            AddStep("AI", "TIAgent MCP Server başlatıldı (AI Köprüsü: http://localhost:19520 & Packages/Inbox)", true);
             RefreshPermissionsTab();
             LoadTiaVersions();
-            LoadSavedLanguage();
 
             // Connect to running TIA Portal in background so UI never freezes if TIA prompts for Openness approval
             _ = ConnectOrRefreshTiaAsync();
@@ -119,6 +132,8 @@ namespace TIAgent
 
         private void MainWindow_Closing(object sender, System.ComponentModel.CancelEventArgs e)
         {
+            SaveWindowBounds();
+            try { File.WriteAllText(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "window_closed.txt"), "MainWindow_Closing called at " + DateTime.Now + "\r\nStack: " + Environment.StackTrace); } catch { }
             try { _approvalCountdownTimer?.Stop(); } catch { }
             try { _bridgeService?.Dispose(); } catch { }
             try { _tiaService?.Dispose(); } catch { }
@@ -126,18 +141,31 @@ namespace TIAgent
 
         private void AppendDetailedLog(string message)
         {
+            if (string.IsNullOrEmpty(message)) return;
+            string msgTr = LanguageTranslator.TranslateLog(message, "tr");
+            string msgEn = LanguageTranslator.TranslateLog(message, "en");
+            var now = DateTime.Now;
+
+            lock (_detailedLogEntries)
+            {
+                _detailedLogEntries.Add((now, msgTr, msgEn));
+                if (_detailedLogEntries.Count > 2000)
+                    _detailedLogEntries.RemoveAt(0);
+            }
+
             try
             {
                 File.AppendAllText(
                     Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "TIAgent_detailed.log"),
-                    $"[{DateTime.Now:HH:mm:ss}] {message}\r\n",
+                    $"[{now:HH:mm:ss}] {msgTr}\r\n",
                     Encoding.UTF8);
             }
             catch { }
 
             Dispatcher.BeginInvoke(new Action(() =>
             {
-                string line = $"[{DateTime.Now:HH:mm:ss}] {message}\r\n";
+                bool isEn = string.Equals(_currentLanguage, "en", StringComparison.OrdinalIgnoreCase);
+                string line = $"[{now:HH:mm:ss}] {(isEn ? msgEn : msgTr)}\r\n";
                 TxtDetailedLog.AppendText(line);
                 TxtDetailedLog.ScrollToEnd();
             }));
@@ -147,16 +175,30 @@ namespace TIAgent
         {
             Dispatcher.BeginInvoke(new Action(() =>
             {
-                string icon = isPending ? "⏳" : (isSuccess ? "✓" : "✗");
+                string statusTr = isPending ? "BEKLİYOR" : (isSuccess ? "BAŞARILI" : "HATA");
+                string statusEn = isPending ? "PENDING" : (isSuccess ? "SUCCESS" : "ERROR");
                 string color = isPending ? "#D97706" : (isSuccess ? "#16A34A" : "#DC2626");
+
+                string catTr = LanguageTranslator.TranslateCategory(category, "tr");
+                string catEn = LanguageTranslator.TranslateCategory(category, "en");
+                string descTr = LanguageTranslator.TranslateLog(description, "tr");
+                string descEn = LanguageTranslator.TranslateLog(description, "en");
+
+                string jobTr = $"{catTr} – {descTr}";
+                string jobEn = $"{catEn} – {descEn}";
+                bool isEn = string.Equals(_currentLanguage, "en", StringComparison.OrdinalIgnoreCase);
 
                 var item = new StepLogItem
                 {
                     Time = DateTime.Now.ToString("HH:mm:ss"),
-                    Icon = icon,
+                    Icon = isEn ? statusEn : statusTr,
                     IconColor = color,
                     Category = category,
-                    JobText = $"{category} – {description}"
+                    JobTextTr = jobTr,
+                    JobTextEn = jobEn,
+                    JobText = isEn ? jobEn : jobTr,
+                    StatusTr = statusTr,
+                    StatusEn = statusEn
                 };
 
                 _steps.Add(item);
@@ -259,7 +301,7 @@ namespace TIAgent
                     _suppressVersionSelectionChange = true;
                     _selectedVersion = detected;
                     CmbVersion.SelectedItem = detected;
-                    Title = $"TIAgent MCP Server - asriakdeniz@gmail.com · {detected.DisplayName}";
+                    Title = "TIAgent MCP Server - asriakdeniz@gmail.com";
                     _suppressVersionSelectionChange = false;
                 }
             }
@@ -350,7 +392,7 @@ namespace TIAgent
 
                 try { File.WriteAllText(selFile, ver.VersionKey, Encoding.UTF8); } catch { }
                 _selectedVersion = ver;
-                Title = $"TIAgent MCP Server - asriakdeniz@gmail.com · {ver.DisplayName}";
+                Title = "TIAgent MCP Server - asriakdeniz@gmail.com";
                 _ = ConnectOrRefreshTiaAsync();
             }
         }
@@ -398,7 +440,11 @@ namespace TIAgent
                     var procs = await Task.Run(() => _tiaService.GetProcessList(ver));
                     if (procs == null || procs.Count == 0)
                     {
-                        DotTiaStatus.Fill = new SolidColorBrush(Color.FromRgb(220, 38, 38));
+                        _suppressProjectSelectionChange = true;
+                        CmbProjects.ItemsSource = null;
+                        _suppressProjectSelectionChange = false;
+
+                        DotTiaStatus.Fill = new SolidColorBrush(Color.FromRgb(239, 68, 68));
                         TxtTiaStatus.Text = $"Açık {ver.DisplayName} bulunamadı ('Kapalı Proje Aç' ile başlatabilirsiniz)";
                         TxtTiaStatus.Foreground = new SolidColorBrush(Color.FromRgb(185, 28, 28));
                         AddStep("TIA", $"Açık {ver.DisplayName} süreci bulunamadı", false);
@@ -409,6 +455,10 @@ namespace TIAgent
                     var orderedProcs = procs
                         .OrderByDescending(p => !string.IsNullOrWhiteSpace(p.ProjectName))
                         .ToList();
+
+                    _suppressProjectSelectionChange = true;
+                    CmbProjects.ItemsSource = orderedProcs;
+                    _suppressProjectSelectionChange = false;
 
                     TiaProcessItem connectedProc = null;
                     Exception lastConnectEx = null;
@@ -433,6 +483,13 @@ namespace TIAgent
                         }
                     }
 
+                    if (connectedProc != null)
+                    {
+                        _suppressProjectSelectionChange = true;
+                        CmbProjects.SelectedItem = connectedProc;
+                        _suppressProjectSelectionChange = false;
+                    }
+
                     if (connectedProc == null && lastConnectEx != null)
                     {
                         throw lastConnectEx;
@@ -440,7 +497,7 @@ namespace TIAgent
 
                     if (_currentProject == null)
                     {
-                        DotTiaStatus.Fill = new SolidColorBrush(Color.FromRgb(217, 119, 6));
+                        DotTiaStatus.Fill = new SolidColorBrush(Color.FromRgb(245, 158, 11));
                         TxtTiaStatus.Text = $"Bağlı (PID: {connectedProc?.ProcessId}) — TIA Portal'da açık proje yok! Lütfen TIA'da bir proje açın veya 'Kapalı Proje Aç' tıklayın.";
                         TxtTiaStatus.Foreground = new SolidColorBrush(Color.FromRgb(180, 83, 9));
                         AddStep("TIA", "TIA Portal açık ancak içinde açık proje yok", false);
@@ -455,14 +512,13 @@ namespace TIAgent
                         CmbPlc.SelectedIndex = 0;
                         AddStep("TIA", $"PLC bilgisi ({_selectedPlc.Name})", true);
 
-                        DotTiaStatus.Fill = new SolidColorBrush(Color.FromRgb(22, 163, 74));
+                        DotTiaStatus.Fill = new SolidColorBrush(Color.FromRgb(16, 185, 129));
                         TxtTiaStatus.Text = $"Bağlı: {_currentProject.Name}  |  PLC: {_selectedPlc.Name}";
-                        TxtTiaStatus.Foreground = new SolidColorBrush(Color.FromRgb(21, 128, 61));
+                        TxtTiaStatus.Foreground = new SolidColorBrush(Color.FromRgb(4, 120, 87));
 
                         if (_pendingPackage != null)
                         {
-                            string uiFolder = TxtTargetFolder.Text?.Trim() ?? "";
-                            string effectiveFolder = !string.IsNullOrWhiteSpace(_pendingPackage.TargetFolder) ? _pendingPackage.TargetFolder : uiFolder;
+                            string effectiveFolder = _pendingPackage.TargetFolder ?? "";
                             string targetDisplay = string.IsNullOrEmpty(effectiveFolder)
                                 ? $"{_selectedPlc.Name} > Program blocks"
                                 : $"{_selectedPlc.Name} > Program blocks > {effectiveFolder}";
@@ -476,8 +532,8 @@ namespace TIAgent
                             }
                             else
                             {
-                                TxtApprovalHeader.Text = $"onay – Paketi aktar: {_pendingPackage.PackageName} → {targetDisplay}  ({DateTime.Now:yyyy-MM-dd HH:mm:ss} · onay bekliyor)";
-                                TxtApprovalDetails.Text = _pendingPackage.GetApprovalSummaryText(_selectedPlc.Name, uiFolder);
+                                SetApprovalStatusProcessing();
+                                TxtApprovalDetails.Text = _pendingPackage.GetApprovalSummaryText(_selectedPlc.Name, effectiveFolder);
                                 BtnApprovePackage.IsEnabled = true;
                                 BtnRejectPackage.IsEnabled = true;
                             }
@@ -488,7 +544,7 @@ namespace TIAgent
                     }
                     else
                     {
-                        DotTiaStatus.Fill = new SolidColorBrush(Color.FromRgb(217, 119, 6));
+                        DotTiaStatus.Fill = new SolidColorBrush(Color.FromRgb(245, 158, 11));
                         TxtTiaStatus.Text = $"Bağlı: {_currentProject.Name}  |  PLC bulunamadı";
                         TxtTiaStatus.Foreground = new SolidColorBrush(Color.FromRgb(180, 83, 9));
                         AddStep("TIA", $"Proje '{_currentProject.Name}' açık ancak PLC istasyonu bulunamadı", false);
@@ -498,7 +554,7 @@ namespace TIAgent
                 catch (Exception ex)
                 {
                     var baseEx = ex.GetBaseException() ?? ex;
-                    DotTiaStatus.Fill = new SolidColorBrush(Color.FromRgb(220, 38, 38));
+                    DotTiaStatus.Fill = new SolidColorBrush(Color.FromRgb(239, 68, 68));
                     TxtTiaStatus.Text = $"Bağlantı hatası: {baseEx.Message}";
                     TxtTiaStatus.Foreground = new SolidColorBrush(Color.FromRgb(185, 28, 28));
                     AddStep("TIA", $"TIA bağlantı hatası: {baseEx.Message}", false);
@@ -539,9 +595,9 @@ namespace TIAgent
                     {
                         _selectedPlc = plcs[0];
                         CmbPlc.SelectedIndex = 0;
-                        DotTiaStatus.Fill = new SolidColorBrush(Color.FromRgb(22, 163, 74));
+                        DotTiaStatus.Fill = new SolidColorBrush(Color.FromRgb(16, 185, 129));
                         TxtTiaStatus.Text = $"Bağlı: {_currentProject.Name}  |  PLC: {_selectedPlc.Name}";
-                        TxtTiaStatus.Foreground = new SolidColorBrush(Color.FromRgb(21, 128, 61));
+                        TxtTiaStatus.Foreground = new SolidColorBrush(Color.FromRgb(4, 120, 87));
                         await ReadCurrentProjectOverviewAsync();
                     }
                 }
@@ -570,10 +626,43 @@ namespace TIAgent
             }
         }
 
+        private void LoadSavedImportMode()
+        {
+            _suppressImportModeChanged = true;
+            try
+            {
+                string modeFile = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "selected_import_mode.txt");
+                if (File.Exists(modeFile))
+                {
+                    string saved = File.ReadAllText(modeFile, Encoding.UTF8).Trim();
+                    if (string.Equals(saved, "auto", StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (RbImportAuto != null) RbImportAuto.IsChecked = true;
+                        if (RbImportManual != null) RbImportManual.IsChecked = false;
+                        _suppressImportModeChanged = false;
+                        return;
+                    }
+                }
+            }
+            catch { }
+            if (RbImportManual != null) RbImportManual.IsChecked = true;
+            if (RbImportAuto != null) RbImportAuto.IsChecked = false;
+            _suppressImportModeChanged = false;
+        }
+
         private async void RbImportMode_Changed(object sender, RoutedEventArgs e)
         {
+            if (_suppressImportModeChanged) return;
             if (_bridgeService == null) return;
             bool isAuto = RbImportAuto?.IsChecked == true;
+
+            try
+            {
+                string modeFile = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "selected_import_mode.txt");
+                File.WriteAllText(modeFile, isAuto ? "auto" : "manual", Encoding.UTF8);
+            }
+            catch { }
+
             AddStep("mod", isAuto ? "İşlem modu: Onay Bekleme (Sormadan doğrudan TIA Portal'a aktarır)" : "İşlem modu: Onay Bekle (Her işlem onay çubuğunda onayınızı bekler)", true);
             _bridgeService.WriteStatusFile();
 
@@ -604,8 +693,6 @@ namespace TIAgent
             try
             {
                 _projectOverview = await Task.Run(() => _tiaService.ReadProjectOverview(_currentProject, _selectedPlc));
-                DgExistingTags.ItemsSource = _projectOverview.ExistingTags;
-                DgExistingBlocks.ItemsSource = _projectOverview.ExistingProgramBlocks;
                 AddStep("proje", $"Proje okundu ({_projectOverview.ExistingProgramBlocks.Count} blok, {_projectOverview.ExistingDataBlocks.Count} DB, {_projectOverview.ExistingTags.Count} tag)", true);
             }
             catch (Exception ex)
@@ -666,7 +753,7 @@ namespace TIAgent
                 BtnRejectPackage.IsEnabled = false;
                 _approvalCountdownTimer.Stop();
                 TxtCountdown.Text = "";
-                TxtApprovalHeader.Text = $"otomatik – Projeden siliniyor: {trimmed}";
+                SetApprovalStatusProcessing();
                 await DeleteCircuitFromTiaAsync(trimmed, sourceChannel, explicitBlockNames, explicitTagTableNames, explicitClearAllMainNetworks, explicitDevices, explicitTechObjects);
                 return true;
             }
@@ -690,17 +777,12 @@ namespace TIAgent
 
             // Clear preview lists
             _packageTags.Clear();
-            LstPackageDbs.ItemsSource = null;
-            IcVisualNetworks.ItemsSource = null;
-            TxtPackageSclPreview.Text = "";
-            TxtPackageXmlPreview.Text = "";
 
             // Activate approval bar with red/amber warning header and 599s countdown
             _approvalRemainingSeconds = 599;
             _approvalCountdownTimer.Start();
 
-            TxtApprovalHeader.Text = $"onay – Projeden Kaldır: \"{trimmed}\"  ({DateTime.Now:yyyy-MM-dd HH:mm:ss} · onay bekliyor)";
-            TxtApprovalHeader.Foreground = new SolidColorBrush(Color.FromRgb(220, 38, 38));
+            SetApprovalStatusProcessing();
 
             var detailsSb = new StringBuilder();
             detailsSb.AppendLine($"İşlem Türü: Projeden Kaldırma / Silme ({sourceChannel})");
@@ -723,7 +805,7 @@ namespace TIAgent
                 detailsSb.AppendLine($"• Silinecek Cihaz/Modüller: {string.Join(", ", explicitDevices.Where(d => !string.IsNullOrWhiteSpace(d)))}");
             if (explicitTechObjects != null && explicitTechObjects.Any(t => !string.IsNullOrWhiteSpace(t)))
                 detailsSb.AppendLine($"• Silinecek Technology Object'ler: {string.Join(", ", explicitTechObjects.Where(t => !string.IsNullOrWhiteSpace(t)))}");
-            detailsSb.AppendLine("Durum: Onayınız bekleniyor. '✓ Paketi Onayla' butonuna bastığınızda silme işlemi TIA Portal'a uygulanacaktır.");
+            detailsSb.AppendLine("Durum: Onayınız bekleniyor. '✓ PLC'ye Aktar' butonuna bastığınızda silme işlemi TIA Portal'a uygulanacaktır.");
 
             TxtApprovalDetails.Text = detailsSb.ToString();
 
@@ -764,17 +846,16 @@ namespace TIAgent
                 if (!connected || _selectedPlc == null)
                 {
                     string err = "TIA Portal'da açık bir PLC projesi bulunamadı!";
-                    AddStep("silme", err, false);
-                    TxtApprovalHeader.Text = $"✗ hata – {err}";
-                    TxtApprovalHeader.Foreground = new SolidColorBrush(Color.FromRgb(220, 38, 38));
+                    AddStep("silme", $"Hata: {err}", false);
+                    AppendDetailedLog($"[HATA] {err}");
+                    SetApprovalStatusWaiting();
                     return Tuple.Create(false, err);
                 }
             }
 
             try
             {
-                TxtApprovalHeader.Text = $"⏳ siliniyor – Projeden kaldırılıyor: {prompt}";
-                TxtApprovalHeader.Foreground = new SolidColorBrush(Color.FromRgb(180, 83, 9));
+                SetApprovalStatusProcessing();
 
                 string delSummary = "";
                 bool hwRequested = (explicitDevices != null && explicitDevices.Any(d => !string.IsNullOrWhiteSpace(d))) ||
@@ -816,15 +897,13 @@ namespace TIAgent
 
                 if (ok)
                 {
-                    TxtApprovalHeader.Text = $"✓ kaldırıldı – {delSummary}";
-                    TxtApprovalHeader.Foreground = new SolidColorBrush(Color.FromRgb(21, 128, 61));
+                    SetApprovalStatusCompleted();
                     TxtApprovalDetails.Text = $"Son İşlem: Projeden Kaldırma ({sourceChannel})\r\nKomut: {prompt}\r\nSonuç: {delSummary}";
-                    TxtCountdown.Text = "Proje güncellendi ve derlendi";
+                    TxtCountdown.Text = "";
                 }
                 else
                 {
-                    TxtApprovalHeader.Text = $"ℹ bilgi – {delSummary}";
-                    TxtApprovalHeader.Foreground = new SolidColorBrush(Color.FromRgb(100, 116, 139));
+                    SetApprovalStatusCompleted();
                     TxtApprovalDetails.Text = $"Komut: {prompt}\r\nDurum: {delSummary}";
                     TxtCountdown.Text = "";
                 }
@@ -838,8 +917,8 @@ namespace TIAgent
                 var baseEx = ex.GetBaseException() ?? ex;
                 string err = baseEx.Message;
                 AddStep("silme", $"Silme hatası: {err}", false);
-                TxtApprovalHeader.Text = $"✗ silme hatası – {err}";
-                TxtApprovalHeader.Foreground = new SolidColorBrush(Color.FromRgb(220, 38, 38));
+                AppendDetailedLog($"[HATA] Silme hatası: {err}");
+                SetApprovalStatusWaiting();
                 _bridgeService?.WriteStatusFile();
                 return Tuple.Create(false, err);
             }
@@ -887,11 +966,11 @@ namespace TIAgent
                     _pendingPackage = null;
                     BtnApprovePackage.IsEnabled = false;
                     BtnRejectPackage.IsEnabled = false;
-                    TxtCountdown.Text = "Paket boş";
-                    TxtApprovalHeader.Text = $"⚠ Paket Çözümlenemedi – \"{trimmed}\"";
-                    TxtApprovalHeader.Foreground = new SolidColorBrush(Color.FromRgb(180, 83, 9));
-                    TxtApprovalDetails.Text = $"Komut: {trimmed}\r\nDurum: Pakette derlenebilir SCL veya hazır blok bulunamadı.";
+                    TxtCountdown.Text = "";
+                    SetApprovalStatusWaiting();
+                    TxtApprovalDetails.Text = $"Komut: {trimmed}\r\nDurum: Pakette derlenebilir blok bulunamadı.";
                     AddStep("AI", $"Özel paket çözümlenemedi: \"{trimmed}\"", false);
+                    AppendDetailedLog($"[UYARI] Özel paket çözümlenemedi: \"{trimmed}\"");
                     _bridgeService?.WriteStatusFile();
                     return null;
                 }
@@ -913,19 +992,12 @@ namespace TIAgent
 
             _pendingPackage = pkg;
 
-            // Update Preview Tab UI
+            // Update Package Tags in memory
             _packageTags.Clear();
             if (pkg.Tags != null)
             {
                 foreach (var t in pkg.Tags) _packageTags.Add(t);
             }
-
-            LstPackageDbs.ItemsSource = pkg.DataBlocks;
-
-            var primaryBlock = pkg.Blocks?.FirstOrDefault(b => !b.IsMainObCall) ?? pkg.Blocks?.FirstOrDefault();
-            IcVisualNetworks.ItemsSource = primaryBlock?.Networks;
-            TxtPackageSclPreview.Text = primaryBlock?.SclCode ?? "";
-            TxtPackageXmlPreview.Text = primaryBlock?.SimaticMlXml ?? "";
 
             int fileCount = (pkg.Blocks?.Count ?? 0) + (pkg.DataBlocks?.Count ?? 0) + ((pkg.Tags?.Count ?? 0) > 0 ? 1 : 0);
             string hwInfo = pkg.HasHardwareContent()
@@ -934,8 +1006,7 @@ namespace TIAgent
             AddStep("paket", $"{pkg.PackageName} ({pkg.Language}) hazır – {pkg.Blocks?.Count ?? 0} blok, {pkg.DataBlocks?.Count ?? 0} DB, {pkg.Tags?.Count ?? 0} I/O tag{hwInfo} ({fileCount} bileşen)", true);
 
             string plcName = _selectedPlc?.Name ?? "PLC";
-            string uiFolder = TxtTargetFolder.Text?.Trim() ?? "";
-            string effectiveFolder = !string.IsNullOrWhiteSpace(pkg.TargetFolder) ? pkg.TargetFolder : uiFolder;
+            string effectiveFolder = pkg.TargetFolder ?? "";
             string targetDisplay = string.IsNullOrEmpty(effectiveFolder)
                 ? $"{plcName} > Program blocks"
                 : $"{plcName} > Program blocks > {effectiveFolder}";
@@ -948,8 +1019,8 @@ namespace TIAgent
                 BtnRejectPackage.IsEnabled = false;
                 _approvalCountdownTimer.Stop();
                 TxtCountdown.Text = "";
-                TxtApprovalHeader.Text = $"otomatik – Paket aktarılıyor: {pkg.PackageName} → {targetDisplay}";
-                TxtApprovalDetails.Text = pkg.GetApprovalSummaryText(plcName, uiFolder);
+                SetApprovalStatusProcessing();
+                TxtApprovalDetails.Text = pkg.GetApprovalSummaryText(plcName, effectiveFolder);
                 return await ApproveAndImportPendingPackageAsync();
             }
             else
@@ -958,9 +1029,8 @@ namespace TIAgent
                 _approvalRemainingSeconds = 599;
                 _approvalCountdownTimer.Start();
 
-                TxtApprovalHeader.Text = $"onay – Paketi aktar: {pkg.PackageName} → {targetDisplay}  ({DateTime.Now:yyyy-MM-dd HH:mm:ss} · onay bekliyor)";
-                TxtApprovalHeader.Foreground = new SolidColorBrush(Color.FromRgb(180, 83, 9));
-                TxtApprovalDetails.Text = pkg.GetApprovalSummaryText(plcName, uiFolder);
+                SetApprovalStatusProcessing();
+                TxtApprovalDetails.Text = pkg.GetApprovalSummaryText(plcName, effectiveFolder);
 
                 BtnApprovePackage.IsEnabled = true;
                 BtnRejectPackage.IsEnabled = true;
@@ -993,6 +1063,30 @@ namespace TIAgent
             }
         }
 
+        private void SetApprovalStatusWaiting()
+        {
+            if (TxtApprovalHeader == null) return;
+            bool isEn = string.Equals(_currentLanguage, "en", StringComparison.OrdinalIgnoreCase);
+            TxtApprovalHeader.Text = isEn ? "Waiting for package" : "Paket bekleniyor";
+            TxtApprovalHeader.Foreground = new SolidColorBrush(Color.FromRgb(251, 191, 36));
+        }
+
+        private void SetApprovalStatusProcessing()
+        {
+            if (TxtApprovalHeader == null) return;
+            bool isEn = string.Equals(_currentLanguage, "en", StringComparison.OrdinalIgnoreCase);
+            TxtApprovalHeader.Text = isEn ? "Processing package" : "Paket işleniyor";
+            TxtApprovalHeader.Foreground = new SolidColorBrush(Color.FromRgb(251, 191, 36));
+        }
+
+        private void SetApprovalStatusCompleted()
+        {
+            if (TxtApprovalHeader == null) return;
+            bool isEn = string.Equals(_currentLanguage, "en", StringComparison.OrdinalIgnoreCase);
+            TxtApprovalHeader.Text = isEn ? "Operation completed" : "İşlem tamamlandı";
+            TxtApprovalHeader.Foreground = new SolidColorBrush(Color.FromRgb(4, 120, 87));
+        }
+
         private async void BtnApprovePackage_Click(object sender, RoutedEventArgs e)
         {
             await ApproveAndImportPendingPackageAsync();
@@ -1003,7 +1097,7 @@ namespace TIAgent
             if (_pendingApprovalAction != null)
             {
                 _approvalCountdownTimer.Stop();
-                TxtCountdown.Text = "İşlem uygulanıyor...";
+                TxtCountdown.Text = "";
                 BtnApprovePackage.IsEnabled = false;
                 BtnRejectPackage.IsEnabled = false;
 
@@ -1019,7 +1113,7 @@ namespace TIAgent
             bool isAutoMode = (RbImportAuto?.IsChecked == true) || (_pendingPackage?.AutoApprove == true);
 
             _approvalCountdownTimer.Stop();
-            TxtCountdown.Text = "Aktarılıyor ve derleniyor...";
+            TxtCountdown.Text = "";
             BtnApprovePackage.IsEnabled = false;
             BtnRejectPackage.IsEnabled = false;
 
@@ -1032,22 +1126,13 @@ namespace TIAgent
                 if (!connected || _selectedPlc == null)
                 {
                     AddStep("aktarım", $"TIA Portal'da açık bir PLC projesi bulunamadı! Lütfen önce TIA Portal'da bir proje açın ve 'TIA'ya bağlan / yenile' tıklayın.", false);
-                    TxtApprovalHeader.Text = $"hata – TIA Portal'da açık PLC projesi yok ({pkg.PackageName} bekliyor)";
-                    TxtApprovalHeader.Foreground = new SolidColorBrush(Color.FromRgb(220, 38, 38));
+                    AppendDetailedLog($"[HATA] TIA Portal'da açık PLC projesi yok ({pkg.PackageName} bekliyor)");
+                    SetApprovalStatusWaiting();
 
-                    if (!isAutoMode)
-                    {
-                        BtnApprovePackage.IsEnabled = true;
-                        BtnRejectPackage.IsEnabled = true;
-                        TxtCountdown.Text = "TIA bağlantısı bekleniyor";
-                    }
-                    else
-                    {
-                        BtnApprovePackage.IsEnabled = false;
-                        BtnRejectPackage.IsEnabled = false;
-                        TxtCountdown.Text = "TIA bağlantısı bekleniyor (Otomatik mod)";
-                        _pendingPackage = null;
-                    }
+                    BtnApprovePackage.IsEnabled = false;
+                    BtnRejectPackage.IsEnabled = false;
+                    TxtCountdown.Text = "";
+                    if (isAutoMode) _pendingPackage = null;
                     return false;
                 }
             }
@@ -1055,7 +1140,7 @@ namespace TIAgent
             // Sync any user edits from DgPackageTags into pkg.Tags
             pkg.Tags = _packageTags.ToList();
 
-            string uiFolder = TxtTargetFolder.Text?.Trim() ?? "";
+            string uiFolder = pkg.TargetFolder ?? "";
             string plcName = _selectedPlc.Name;
             AddStep("onay", $"Paket onaylandı: {pkg.PackageName} → {plcName} > Program blocks", true);
 
@@ -1077,17 +1162,16 @@ namespace TIAgent
 
                 if (ok)
                 {
-                    TxtApprovalHeader.Text = $"✓ tamamlandı – {pkg.PackageName} başarıyla TIA Portal'a aktarıldı ve derlendi ({compileMsg})";
-                    TxtApprovalHeader.Foreground = new SolidColorBrush(Color.FromRgb(21, 128, 61));
-                    TxtCountdown.Text = "Aktarım ve derleme başarılı";
+                    SetApprovalStatusCompleted();
+                    TxtCountdown.Text = "";
                     await ReadCurrentProjectOverviewAsync();
                     return true;
                 }
                 else
                 {
-                    TxtApprovalHeader.Text = $"⚠ aktarıldı – {pkg.PackageName} aktarıldı ({compileMsg})";
-                    TxtApprovalHeader.Foreground = new SolidColorBrush(Color.FromRgb(180, 83, 9));
-                    TxtCountdown.Text = compileMsg;
+                    SetApprovalStatusCompleted();
+                    TxtCountdown.Text = "";
+                    AppendDetailedLog($"[BİLGİ] {compileMsg}");
                     await ReadCurrentProjectOverviewAsync();
                     return true;
                 }
@@ -1096,22 +1180,21 @@ namespace TIAgent
             {
                 var baseEx = ex.GetBaseException() ?? ex;
                 AddStep("aktarım", $"{pkg.PackageName} aktarım hatası: {baseEx.Message}", false);
-                TxtApprovalHeader.Text = $"✗ hata – {pkg.PackageName} aktarılamadı: {baseEx.Message}";
-                TxtApprovalHeader.Foreground = new SolidColorBrush(Color.FromRgb(220, 38, 38));
+                AppendDetailedLog($"[HATA] {pkg.PackageName} aktarım hatası:\r\n{baseEx.Message}");
+                if (ex.InnerException != null)
+                    AppendDetailedLog($"[HATA DETAYI] {ex.InnerException.Message}");
+                SetApprovalStatusWaiting();
 
-                if (!isAutoMode)
+                BtnApprovePackage.IsEnabled = false;
+                BtnRejectPackage.IsEnabled = false;
+                TxtCountdown.Text = "";
+                _pendingPackage = null;
+                if (TxtApprovalDetails != null)
                 {
-                    BtnApprovePackage.IsEnabled = true;
-                    BtnRejectPackage.IsEnabled = true;
-                    TxtCountdown.Text = "Tekrar denemek için Onayla'ya tıklayın";
-                }
-                else
-                {
-                    // Otomatik modda asla onay istenmez ve Onayla butonu asla aktif edilmez
-                    BtnApprovePackage.IsEnabled = false;
-                    BtnRejectPackage.IsEnabled = false;
-                    TxtCountdown.Text = $"Otomatik mod – Hata: {baseEx.Message}";
-                    _pendingPackage = null;
+                    bool isEn = string.Equals(_currentLanguage, "en", StringComparison.OrdinalIgnoreCase);
+                    TxtApprovalDetails.Text = isEn
+                        ? $"AI Request: {pkg.PackageName}\nProcess failed. Check Openness Process Log for details."
+                        : $"AI Talebi: {pkg.PackageName}\nİşlem başarısız oldu. Hata detayları için Openness İşlem Günlüğü sekmesine bakın.";
                 }
                 return false;
             }
@@ -1126,6 +1209,53 @@ namespace TIAgent
             RejectPendingPackage("Kullanıcı tarafından reddedildi");
         }
 
+        private void BtnClearPackage_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                _approvalCountdownTimer.Stop();
+                _pendingApprovalAction = null;
+                _pendingPackage = null;
+                SetApprovalStatusWaiting();
+                bool isEn = string.Equals(_currentLanguage, "en", StringComparison.OrdinalIgnoreCase);
+                if (TxtApprovalDetails != null)
+                {
+                    TxtApprovalDetails.Text = isEn
+                        ? "AI Request: -\nPLC Location: -\nProcess Details: No pending operations waiting for approval."
+                        : "AI Talebi: -\nPLC Konumu: -\nİşlem Detayı: Henüz onay bekleyen bir işlem yok.";
+                }
+                if (BtnApprovePackage != null) BtnApprovePackage.IsEnabled = false;
+                if (BtnRejectPackage != null) BtnRejectPackage.IsEnabled = false;
+                if (TxtCountdown != null) TxtCountdown.Text = "";
+                _bridgeService?.WriteStatusFile();
+                AppendDetailedLog(isEn ? "[INFO] Incoming AI package details cleared." : "[BİLGİ] AI'den gelen paket detayları temizlendi.");
+            }
+            catch (Exception ex)
+            {
+                AppendDetailedLog($"[HATA] Paket temizleme hatası: {ex.Message}");
+            }
+        }
+
+        private void BtnCopyPackage_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                string header = TxtApprovalHeader?.Text ?? "";
+                string details = TxtApprovalDetails?.Text ?? "";
+                string textToCopy = string.IsNullOrWhiteSpace(header) ? details : $"{header}\n\n{details}";
+                if (!string.IsNullOrWhiteSpace(textToCopy))
+                {
+                    Clipboard.SetText(textToCopy);
+                    bool isEn = string.Equals(_currentLanguage, "en", StringComparison.OrdinalIgnoreCase);
+                    AppendDetailedLog(isEn ? "[INFO] Package details copied to clipboard." : "[BİLGİ] Paket detayları panoya kopyalandı.");
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Kopyalama hatası: " + ex.Message);
+            }
+        }
+
         public void RejectPendingPackage(string reason)
         {
             _approvalCountdownTimer.Stop();
@@ -1133,8 +1263,8 @@ namespace TIAgent
             if (_pendingPackage != null)
             {
                 AddStep("onay", $"İşlem reddedildi: {_pendingPackage.PackageName} ({reason})", false);
-                TxtApprovalHeader.Text = $"✗ reddedildi – {_pendingPackage.PackageName} ({reason})";
-                TxtApprovalHeader.Foreground = new SolidColorBrush(Color.FromRgb(100, 116, 139));
+                AppendDetailedLog($"[BİLGİ] İşlem reddedildi: {_pendingPackage.PackageName} ({reason})");
+                SetApprovalStatusWaiting();
                 _pendingPackage = null;
             }
             BtnApprovePackage.IsEnabled = false;
@@ -1143,26 +1273,13 @@ namespace TIAgent
             _bridgeService?.WriteStatusFile();
         }
 
-        private void BtnShowPreviewTab_Click(object sender, RoutedEventArgs e)
-        {
-            MainTabs.SelectedIndex = 1;
-        }
-
         // =========================================================================================
         // 3. OPENNESS GRUBU, YEDEK KLASÖRÜ VE İZİNLER
         // =========================================================================================
         private void RefreshPermissionsTab()
         {
             TiaOpennessService.CheckOpennessPermissions(out _, out _, out string details);
-            TxtPermissionsInfo.Text = details +
-                $"\r\nAI HTTP Köprüsü: http://localhost:19520/api/status" +
-                $"\r\nAI Paket Klasörü: {_bridgeService?.InboxFolder}" +
-                $"\r\nOtomatik Yedek Klasörü: {_backupRootDir}";
-        }
-
-        private void BtnRefreshPermissions_Click(object sender, RoutedEventArgs e)
-        {
-            RefreshPermissionsTab();
+            AppendDetailedLog(details);
         }
 
         private void BtnAddOpennessGroup_Click(object sender, RoutedEventArgs e)
@@ -1173,16 +1290,34 @@ namespace TIAgent
             MessageBox.Show(msg, "Openness Grubu ve Whitelist", MessageBoxButton.OK, ok ? MessageBoxImage.Information : MessageBoxImage.Warning);
         }
 
-        private void BtnBackupFolder_Click(object sender, RoutedEventArgs e)
+        private RollbackWindow _rollbackWindow;
+
+        private void BtnOpenRollbackWindow_Click(object sender, RoutedEventArgs e)
         {
             try
             {
-                Directory.CreateDirectory(_backupRootDir);
-                Process.Start("explorer.exe", _backupRootDir);
+                if (_rollbackWindow == null || !_rollbackWindow.IsLoaded)
+                {
+                    _rollbackWindow = new RollbackWindow(
+                        _backupRootDir,
+                        _tiaService,
+                        _selectedPlc,
+                        (cat, msg, ok) => AddStep(cat, msg, ok),
+                        _currentLanguage);
+                    _rollbackWindow.Owner = this;
+                    _rollbackWindow.Closed += (s, args) => _rollbackWindow = null;
+                    _rollbackWindow.Show();
+                }
+                else
+                {
+                    if (_rollbackWindow.WindowState == WindowState.Minimized)
+                        _rollbackWindow.WindowState = WindowState.Normal;
+                    _rollbackWindow.Activate();
+                }
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Yedek klasörü açılamadı: {ex.Message}", "Hata", MessageBoxButton.OK, MessageBoxImage.Error);
+                MessageBox.Show("Geri alma penceresi açılamadı: " + ex.Message, "Hata", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
@@ -1228,7 +1363,7 @@ namespace TIAgent
                     projectPath = _currentProject?.FilePath ?? "",
                     plcName = _selectedPlc?.Name ?? "",
                     importMode = RbImportAuto.IsChecked == true ? "Otomatik" : "Manuel",
-                    targetFolder = TxtTargetFolder.Text?.Trim() ?? "",
+                    targetFolder = "",
                     lastUserPrompt = _lastUserPrompt ?? "",
                     pendingPackage = _pendingPackage != null ? new
                     {
@@ -1262,6 +1397,12 @@ namespace TIAgent
                 {
                     string action = (req?.Action ?? "generate").Trim().ToLowerInvariant();
                     string sourceChannel = !string.IsNullOrWhiteSpace(req?.SourceChannel) ? req.SourceChannel : "AI";
+
+                    if (!_isBridgeActive && action != "status")
+                    {
+                        tcs.TrySetResult(new { ok = false, error = "AI Köprüsü kullanıcı tarafından geçici olarak devre dışı bırakıldı (Pasif modda). TIAgent MCP Server ekranından 'Köprü Açık' butonuna basarak aktifleştirebilirsiniz." });
+                        return;
+                    }
 
                     if (action == "connect")
                     {
@@ -1421,6 +1562,8 @@ namespace TIAgent
 
         private void LoadSavedLanguage()
         {
+            _suppressLanguageSelectionChange = true;
+            string lang = "tr";
             try
             {
                 string langFile = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "selected_language.txt");
@@ -1429,18 +1572,23 @@ namespace TIAgent
                     string saved = File.ReadAllText(langFile, Encoding.UTF8).Trim();
                     if (string.Equals(saved, "en", StringComparison.OrdinalIgnoreCase))
                     {
-                        if (CmbLanguage != null) CmbLanguage.SelectedIndex = 1;
-                        ApplyLanguage("en");
-                        return;
+                        lang = "en";
                     }
                 }
             }
             catch { }
-            ApplyLanguage("tr");
+
+            if (CmbLanguage != null)
+            {
+                CmbLanguage.SelectedIndex = (lang == "en") ? 1 : 0;
+            }
+            _suppressLanguageSelectionChange = false;
+            ApplyLanguage(lang);
         }
 
         private void CmbLanguage_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
+            if (_suppressLanguageSelectionChange) return;
             if (CmbLanguage?.SelectedItem is ComboBoxItem item)
             {
                 string tag = item.Tag as string;
@@ -1461,73 +1609,544 @@ namespace TIAgent
             }
             catch { }
 
-            // Top Header
+            // Top Header & Themes
+            if (BtnThemeLight != null) BtnThemeLight.Content = isEn ? "☀️ Light" : "☀️ Açık";
+            if (BtnThemeDark != null) BtnThemeDark.Content = isEn ? "🌙 Dark" : "🌙 Koyu";
+            if (BtnHeaderHelp != null) BtnHeaderHelp.Content = isEn ? "? Help" : "? Yardım";
+            if (LblLanguage != null) LblLanguage.Text = isEn ? "Language / Dil:" : "Arayüz Dili / Language:";
+
+            // Tab Headers
+            if (TabItemConnection != null) TabItemConnection.Header = isEn ? "🔗 Connection" : "🔗 Bağlantı";
+            if (TabItemApproval != null) TabItemApproval.Header = isEn ? "🛡️ Approval" : "🛡️ Onay";
+            if (TabItemQuickActions != null) TabItemQuickActions.Header = isEn ? "⚡ Quick Actions" : "⚡ Hızlı İşlemler";
+            if (TabItemThemeLang != null) TabItemThemeLang.Header = isEn ? "🎨 Theme-Lang-Help" : "🎨 Tema-Dil-Yardım";
+            if (TabItemAiLog != null) TabItemAiLog.Header = isEn ? "🌐 AI Bridge Logs" : "🌐 AI Köprüsü Logu";
+            if (TabItemTiaLog != null) TabItemTiaLog.Header = isEn ? "⚙️ Openness & Process Log" : "⚙️ Openness İşlem Günlüğü";
+
+            // Toolbar Row 1: TIA Version, Open Projects, AI Bridge
             if (LblTiaVersion != null) LblTiaVersion.Text = isEn ? "TIA Version:" : "TIA Sürümü:";
-            if (BtnHeaderHelp != null) BtnHeaderHelp.Content = isEn ? "? Help & About" : "? Yardım & Hakkında";
-            if (LblLanguage != null) LblLanguage.Text = isEn ? "Language:" : "Dil:";
-
-            // Toolbar Labels & Buttons
-            if (LblAiBridge != null) LblAiBridge.Text = isEn ? "AI Bridge:" : "AI Köprü:";
-            if (LblTia != null) LblTia.Text = "TIA:";
-            if (BtnConnectTia != null) BtnConnectTia.Content = isEn ? "Connect / Refresh TIA" : "TIA'ya bağlan / yenile";
-            if (LblPlc != null) LblPlc.Text = "PLC:";
-            if (LblFolder != null) LblFolder.Text = isEn ? "Folder:" : "Klasör:";
-            if (TxtTargetFolder != null)
-                TxtTargetFolder.ToolTip = isEn
-                    ? "If empty, added to root of Program blocks. Nested folder example: Motors/Line1"
-                    : "Boş bırakılırsa Program blocks köküne eklenir. İç içe klasör örneği: Motorlar/Hat1";
-
-            if (BtnOpenProjectFile != null) BtnOpenProjectFile.Content = isEn ? "Open Offline Project (.ap*)" : "Kapalı Proje Aç (.ap*)";
-            if (BtnAddOpennessGroup != null) BtnAddOpennessGroup.Content = isEn ? "Add to Openness group" : "Openness grubuna ekle";
-            if (BtnBackupFolder != null) BtnBackupFolder.Content = isEn ? "Backup folder" : "Yedek klasörü";
-            if (BtnReadProject != null) BtnReadProject.Content = isEn ? "Read Project" : "Projeyi Oku";
-
-            // Mode
-            if (RbImportManual != null) RbImportManual.Content = isEn ? "Wait for Approval" : "Onay Bekle";
-            if (RbImportAuto != null) RbImportAuto.Content = isEn ? "No Approval" : "Onay Bekleme";
-
-            // Main Tabs
-            if (TabSteps != null) TabSteps.Header = isEn ? "  Steps  " : "  Adımlar  ";
-            if (TabPreview != null) TabPreview.Header = isEn ? "  Package & Ladder Preview  " : "  Paket & Ladder Önizleme  ";
-            if (TabExplorer != null) TabExplorer.Header = isEn ? "  Project Explorer  " : "  Proje Gezgini  ";
-            if (TabLog != null) TabLog.Header = isEn ? "  Log  " : "  Kayıt  ";
-            if (TabPermissions != null) TabPermissions.Header = isEn ? "  Permissions  " : "  İzinler  ";
-
-            // Steps Toolbar
-            if (BtnClearSteps != null) BtnClearSteps.Content = isEn ? "🗑 Clear Steps" : "🗑 Adımları Temizle";
-            if (BtnCopySelectedSteps != null) BtnCopySelectedSteps.Content = isEn ? "📋 Copy Selected" : "📋 Seçileni Kopyala";
-            if (BtnCopyAllSteps != null) BtnCopyAllSteps.Content = isEn ? "📋 Copy All" : "📋 Tümünü Kopyala";
-
-            // Preview Sub-tabs & Labels
-            if (LblPackageTags != null) LblPackageTags.Text = isEn ? "1. PLC I/O Tags to Create (Editable)" : "1. Oluşturulacak PLC I/O Tagları (Düzenlenebilir)";
-            if (LblPackageDbs != null) LblPackageDbs.Text = isEn ? "2. Data Blocks to Create (DB)" : "2. Oluşturulacak Veri Blokları (DB)";
-            if (TabSubVisual != null) TabSubVisual.Header = isEn ? "Graphical Ladder Networks" : "Grafiksel Ladder Networkler";
-            if (TabSubScl != null) TabSubScl.Header = isEn ? "SCL Source Code" : "SCL Kaynak Kodu";
-            if (TabSubXml != null) TabSubXml.Header = isEn ? "SimaticML XML (TIA Import)" : "SimaticML XML (TIA Import)";
-
-            // Project Explorer
-            if (GrpExistingTags != null) GrpExistingTags.Header = isEn ? "Existing Tags in PLC" : "PLC'deki Mevcut Taglar";
-            if (GrpExistingBlocks != null) GrpExistingBlocks.Header = isEn ? "Existing Program Blocks in PLC (OB / FB / FC)" : "PLC'deki Mevcut Program Blokları (OB / FB / FC)";
-
-            // Permissions Tab
-            if (LblPermissionsTitle != null) LblPermissionsTitle.Text = isEn ? "Siemens TIA Openness & AI Bridge Permissions" : "Siemens TIA Openness & AI Köprü İzinleri";
-            if (BtnAddOpennessGroupAdmin != null) BtnAddOpennessGroupAdmin.Content = isEn ? "Add User to Openness Group & Whitelist (Admin)" : "Kullanıcıyı Openness Grubuna & Whitelist'e Ekle (Yönetici)";
-            if (BtnRefreshPermissions != null) BtnRefreshPermissions.Content = isEn ? "Refresh Permission Status" : "İzin Durumunu Yenile";
-
-            // Bottom Approval Bar
-            if (BtnApprovePackage != null) BtnApprovePackage.Content = isEn ? "Accept" : "Kabul Et";
-            if (BtnRejectPackage != null) BtnRejectPackage.Content = isEn ? "Cancel" : "İptal Et";
-            if (BtnShowPreviewTab != null) BtnShowPreviewTab.Content = isEn ? "View Schema / Tags" : "Şemayı / Tagları Gör";
-
-            if (_pendingPackage == null && TxtApprovalHeader != null)
+            if (LblOpenProjects != null) LblOpenProjects.Text = isEn ? "Open Projects:" : "Açık Projeler:";
+            if (LblAiBridge != null) LblAiBridge.Text = isEn ? "AI Bridge:" : "AI Köprüsü:";
+            if (BtnToggleBridge != null)
             {
-                TxtApprovalHeader.Text = isEn
-                    ? "approval – Waiting for package (operations sent by AI agents will be approved here)"
-                    : "onay – Hazır paket bekleniyor (AI üzerinden gönderilen işlemler burada onaylanır)";
+                BtnToggleBridge.Content = _isBridgeActive
+                    ? (isEn ? "🟢 Bridge Active" : "🟢 Köprü Açık")
+                    : (isEn ? "🔴 Bridge Inactive" : "🔴 Köprü Kapalı");
+            }
+            if (TxtAiStatus != null)
+            {
+                TxtAiStatus.Text = _isBridgeActive
+                    ? (isEn ? "localhost:19520 (Active)" : "localhost:19520 (Aktif)")
+                    : (isEn ? "localhost:19520 (Inactive)" : "localhost:19520 (Pasif)");
             }
 
-            // Update open HelpWindow if active
+            // Toolbar Row 2: Action Buttons
+            if (BtnRefreshTia != null) BtnRefreshTia.Content = isEn ? "🔄 Refresh" : "🔄 Yenile";
+            if (BtnConnectTia != null) BtnConnectTia.Content = isEn ? "🔌 Connect" : "🔌 Bağlan";
+            if (BtnOpenProjectFile != null) BtnOpenProjectFile.Content = isEn ? "📂 Open Offline (.apXX)" : "📂 Kapalı Proje Aç (.apXX)";
+            if (BtnDisconnectTia != null) BtnDisconnectTia.Content = isEn ? "✂️ Disconnect" : "✂️ Bağlantıyı Kes";
+            if (BtnRestartApp != null) BtnRestartApp.Content = isEn ? "🔁 Restart" : "🔁 Yeniden Başlat";
+
+            // Toolbar Row 3: Status & PLC
+            if (LblPlc != null) LblPlc.Text = isEn ? "PLC Station:" : "PLC İstasyonu:";
+            if (TxtTiaStatus != null)
+            {
+                if (_currentProject == null)
+                {
+                    TxtTiaStatus.Text = isEn ? "Waiting for connection... | Active Project: - |" : "Bağlantı bekleniyor... | Aktif Proje: - |";
+                }
+                else
+                {
+                    TxtTiaStatus.Text = isEn
+                        ? $"Connected: {_currentProject.Name}  |  PLC: {_selectedPlc?.Name ?? "-"}"
+                        : $"Bağlı: {_currentProject.Name}  |  PLC: {_selectedPlc?.Name ?? "-"}";
+                }
+            }
+
+            // Approval Card
+            if (LblApprovalBadge != null) LblApprovalBadge.Text = isEn ? "Incoming AI Packages:" : "AI'den Gelen Paketler:";
+            if (BtnApprovePackage != null) BtnApprovePackage.Content = isEn ? "✓ Write to PLC" : "✓ PLC'ye Aktar";
+            if (BtnRejectPackage != null) BtnRejectPackage.Content = isEn ? "✕ Cancel" : "✕ İptal Et";
+            if (BtnClearPackage != null) BtnClearPackage.Content = isEn ? "🗑 Clear" : "🗑 Temizle";
+            if (BtnCopyPackage != null) BtnCopyPackage.Content = isEn ? "📋 Copy" : "📋 Kopyala";
+            if (MenuCopyPackage != null) MenuCopyPackage.Header = isEn ? "📋 Copy" : "📋 Kopyala";
+            if (MenuClearPackage != null) MenuClearPackage.Header = isEn ? "🗑 Clear" : "🗑 Temizle";
+
+            if (_pendingPackage == null)
+            {
+                if (TxtApprovalHeader != null)
+                {
+                    if (TxtApprovalHeader.Text.Contains("tamamlandı") || TxtApprovalHeader.Text.Contains("completed"))
+                        SetApprovalStatusCompleted();
+                    else
+                        SetApprovalStatusWaiting();
+                }
+                if (TxtApprovalDetails != null)
+                {
+                    TxtApprovalDetails.Text = isEn
+                        ? "AI Request: -\nPLC Location: -\nProcess Details: No pending operations waiting for approval."
+                        : "AI Talebi: -\nPLC Konumu: -\nİşlem Detayı: Henüz onay bekleyen bir işlem yok.";
+                }
+            }
+            else
+            {
+                if (TxtApprovalDetails != null)
+                {
+                    TxtApprovalDetails.Text = _pendingPackage.GetApprovalSummaryText(_selectedPlc?.Name, "", lang);
+                }
+            }
+
+            // Logs Section: Headers, Column Titles & Buttons
+            if (LblAiLogsTitle != null)
+                LblAiLogsTitle.Text = isEn ? "🌐 AI Bridge Communication & Request Log" : "🌐 AI Köprüsü İletişim & Talep Logu";
+            if (LblTiaLogsTitle != null)
+                LblTiaLogsTitle.Text = isEn ? "⚙️ TIAgent & Openness Process Log" : "⚙️ TIAgent & Openness İşlem Günlüğü";
+
+            if (ColTime != null) ColTime.Header = isEn ? "TIME" : "ZAMAN";
+            if (ColStatus != null) ColStatus.Header = isEn ? "STATUS" : "DURUM";
+            if (ColDetails != null) ColDetails.Header = isEn ? "AI REQUEST / PROCESS DETAILS" : "AI TALEP / İŞLEM DETAYI";
+
+            if (BtnClearAiLogs != null) BtnClearAiLogs.Content = isEn ? "🗑 Clear" : "🗑 Temizle";
+            if (BtnCopyAiLogs != null) BtnCopyAiLogs.Content = isEn ? "📋 Copy" : "📋 Kopyala";
+            if (BtnClearTiaLogs != null) BtnClearTiaLogs.Content = isEn ? "🗑 Clear" : "🗑 Temizle";
+            if (BtnCopyTiaLogs != null) BtnCopyTiaLogs.Content = isEn ? "📋 Copy" : "📋 Kopyala";
+
+            // Operations & Settings Horizontal Bar
+            if (LblApprovalModeTitle != null)
+                LblApprovalModeTitle.Text = "";
+            if (RbImportManual != null)
+                RbImportManual.Content = isEn ? "Wait for Approval" : "Onay Bekle";
+            if (RbImportAuto != null)
+                RbImportAuto.Content = isEn ? "No Approval" : "Onay Bekleme";
+            if (TxtApprovalExplanation != null)
+            {
+                TxtApprovalExplanation.Text = isEn
+                    ? "Wait for Approval: Packages are written using 'Write to PLC' button.\nNo Approval: Incoming packages are processed automatically without confirmation."
+                    : "Onay Bekle: Paketler PLC'ye Aktar butonu ile işlenir.\nOnay Bekleme: Onay olmadan otomatik olarak gelen paketler işlenir.";
+            }
+            if (LblQuickActionsTitle != null)
+                LblQuickActionsTitle.Text = "";
+            if (BtnReadProject != null)
+                BtnReadProject.Content = isEn ? "🔍 Read Project" : "🔍 Projeyi Oku";
+            if (BtnAddOpennessGroup != null)
+                BtnAddOpennessGroup.Content = isEn ? "🛡️ Openness Group" : "🛡️ Openness Grubu";
+            if (BtnOpenRollbackWindow != null)
+                BtnOpenRollbackWindow.Content = isEn ? "↺ History & Undo" : "↺ İşlem Geçmişi";
+
+            // Update all existing step log rows into the chosen language!
+            foreach (var step in _steps)
+            {
+                step.UpdateLanguage(lang);
+            }
+
+            // Update detailed log textbox with the chosen language!
+            var sb = new StringBuilder();
+            lock (_detailedLogEntries)
+            {
+                foreach (var entry in _detailedLogEntries)
+                {
+                    string text = isEn ? entry.textEn : entry.textTr;
+                    sb.AppendLine($"[{entry.time:HH:mm:ss}] {text}");
+                }
+            }
+            if (TxtDetailedLog != null)
+            {
+                TxtDetailedLog.Text = sb.ToString();
+                TxtDetailedLog.ScrollToEnd();
+            }
+
+            // Update open HelpWindow & RollbackWindow if active
             _helpWindow?.ApplyLanguage(lang);
+            _rollbackWindow?.ApplyLanguage(lang);
+            UpdateTopmostButton();
+        }
+
+        private void LoadSavedTopmost()
+        {
+            try
+            {
+                string topFile = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "selected_topmost.txt");
+                if (File.Exists(topFile))
+                {
+                    string saved = File.ReadAllText(topFile, Encoding.UTF8).Trim();
+                    if (string.Equals(saved, "false", StringComparison.OrdinalIgnoreCase))
+                    {
+                        Topmost = false;
+                        UpdateTopmostButton();
+                        return;
+                    }
+                }
+            }
+            catch { }
+            Topmost = true; // Varsayılan: Her zaman üstte
+            UpdateTopmostButton();
+        }
+
+        private void BtnToggleTopmost_Click(object sender, RoutedEventArgs e)
+        {
+            Topmost = !Topmost;
+            UpdateTopmostButton();
+            try
+            {
+                string topFile = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "selected_topmost.txt");
+                File.WriteAllText(topFile, Topmost ? "true" : "false", Encoding.UTF8);
+            }
+            catch { }
+        }
+
+        private void UpdateTopmostButton()
+        {
+            bool isEn = string.Equals(_currentLanguage, "en", StringComparison.OrdinalIgnoreCase);
+            if (BtnToggleTopmost != null)
+            {
+                BtnToggleTopmost.Content = Topmost
+                    ? (isEn ? "📌 On Top" : "📌 Üstte")
+                    : (isEn ? "📍 Normal" : "📍 Normal");
+            }
+        }
+
+        private void LoadSavedWindowBounds()
+        {
+            try
+            {
+                string boundsFile = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "selected_window_bounds.txt");
+                if (File.Exists(boundsFile))
+                {
+                    var lines = File.ReadAllLines(boundsFile, Encoding.UTF8);
+                    if (lines.Length >= 2 && double.TryParse(lines[0], out double w) && double.TryParse(lines[1], out double h))
+                    {
+                        if (w >= 300 && h >= 250)
+                        {
+                            Width = w;
+                            Height = h;
+                        }
+                    }
+                    if (lines.Length >= 3 && Enum.TryParse(lines[2], out WindowState state) && state != WindowState.Minimized)
+                    {
+                        WindowState = state;
+                    }
+                }
+            }
+            catch { }
+        }
+
+        private void SaveWindowBounds()
+        {
+            try
+            {
+                string boundsFile = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "selected_window_bounds.txt");
+                double w = (WindowState == WindowState.Normal) ? ActualWidth : RestoreBounds.Width;
+                double h = (WindowState == WindowState.Normal) ? ActualHeight : RestoreBounds.Height;
+                if (w < 320) w = 320;
+                if (h < 250) h = 250;
+                File.WriteAllLines(boundsFile, new[] { w.ToString(), h.ToString(), WindowState.ToString() }, Encoding.UTF8);
+            }
+            catch { }
+        }
+
+        private void LoadSavedTheme()
+        {
+            try
+            {
+                string themeFile = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "selected_theme.txt");
+                if (File.Exists(themeFile))
+                {
+                    string saved = File.ReadAllText(themeFile, Encoding.UTF8).Trim();
+                    if (string.Equals(saved, "dark", StringComparison.OrdinalIgnoreCase))
+                    {
+                        ApplyTheme(isDark: true);
+                        return;
+                    }
+                    if (string.Equals(saved, "light", StringComparison.OrdinalIgnoreCase))
+                    {
+                        ApplyTheme(isDark: false);
+                        return;
+                    }
+                }
+            }
+            catch { }
+            ApplyTheme(isDark: false); // Varsayılan tema: Açık Tema
+        }
+
+        private void BtnThemeLight_Click(object sender, RoutedEventArgs e)
+        {
+            ApplyTheme(isDark: false);
+        }
+
+        private void BtnThemeDark_Click(object sender, RoutedEventArgs e)
+        {
+            ApplyTheme(isDark: true);
+        }
+
+        private void ApplyTheme(bool isDark)
+        {
+            try
+            {
+                string themeFile = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "selected_theme.txt");
+                File.WriteAllText(themeFile, isDark ? "dark" : "light", Encoding.UTF8);
+            }
+            catch { }
+
+            if (isDark)
+            {
+                Resources["BgWindow"] = new SolidColorBrush(Color.FromRgb(0x11, 0x1A, 0x24));
+                Resources["BgHeader"] = new SolidColorBrush(Color.FromRgb(0x16, 0x22, 0x2F));
+                Resources["BgSubHeader"] = new SolidColorBrush(Color.FromRgb(0x12, 0x1B, 0x26));
+                Resources["BgCard"] = new SolidColorBrush(Color.FromRgb(0x18, 0x25, 0x35));
+                Resources["BgSubCard"] = new SolidColorBrush(Color.FromRgb(0x12, 0x1B, 0x26));
+                Resources["BgBox"] = new SolidColorBrush(Color.FromRgb(0x0C, 0x13, 0x1B));
+                Resources["BorderCard"] = new SolidColorBrush(Color.FromRgb(0x26, 0x37, 0x4A));
+                Resources["BorderHeader"] = new SolidColorBrush(Color.FromRgb(0x23, 0x32, 0x45));
+                Resources["TextMain"] = new SolidColorBrush(Color.FromRgb(0xF8, 0xFA, 0xFC));
+                Resources["TextMuted"] = new SolidColorBrush(Color.FromRgb(0x94, 0xA3, 0xB8));
+                Resources["TextConsole"] = new SolidColorBrush(Color.FromRgb(0x38, 0xBD, 0xF8));
+                Resources["DgBg"] = new SolidColorBrush(Color.FromRgb(0x0C, 0x13, 0x1B));
+                Resources["DgRowBg"] = new SolidColorBrush(Color.FromRgb(0x0F, 0x17, 0x22));
+                Resources["DgAltRowBg"] = new SolidColorBrush(Color.FromRgb(0x12, 0x1D, 0x2B));
+                Resources["DgHeaderBg"] = new SolidColorBrush(Color.FromRgb(0x18, 0x25, 0x35));
+                Resources["DgGridLines"] = new SolidColorBrush(Color.FromRgb(0x1E, 0x2B, 0x3A));
+
+                // Dark Button Colors
+                Resources["BtnToolBg"] = new SolidColorBrush(Color.FromRgb(0x1E, 0x2B, 0x3A));
+                Resources["BtnToolFg"] = new SolidColorBrush(Color.FromRgb(0xF1, 0xF5, 0xF9));
+                Resources["BtnToolBorder"] = new SolidColorBrush(Color.FromRgb(0x33, 0x46, 0x5C));
+                Resources["BtnToolHoverBg"] = new SolidColorBrush(Color.FromRgb(0x29, 0x3A, 0x4E));
+                Resources["BtnToolHoverFg"] = new SolidColorBrush(Color.FromRgb(0xFF, 0xFF, 0xFF));
+                Resources["BtnToolHoverBorder"] = new SolidColorBrush(Color.FromRgb(0x38, 0xBD, 0xF8));
+
+                Resources["BtnDangerBg"] = new SolidColorBrush(Color.FromRgb(0x5B, 0x19, 0x1F));
+                Resources["BtnDangerFg"] = new SolidColorBrush(Color.FromRgb(0xFC, 0xA5, 0xA5));
+                Resources["BtnDangerBorder"] = new SolidColorBrush(Color.FromRgb(0xDC, 0x26, 0x26));
+                Resources["BtnDangerHoverBg"] = new SolidColorBrush(Color.FromRgb(0x7F, 0x1D, 0x1D));
+
+                Resources["BtnMiniBg"] = new SolidColorBrush(Color.FromRgb(0x1A, 0x26, 0x34));
+                Resources["BtnMiniFg"] = new SolidColorBrush(Color.FromRgb(0xCB, 0xD5, 0xE1));
+                Resources["BtnMiniBorder"] = new SolidColorBrush(Color.FromRgb(0x2D, 0x3F, 0x54));
+                Resources["BtnMiniHoverBg"] = new SolidColorBrush(Color.FromRgb(0x24, 0x34, 0x47));
+            }
+            else
+            {
+                // Soft light theme: Clean, modern, soft white/slate with crisp text and subtle border
+                Resources["BgWindow"] = new SolidColorBrush(Color.FromRgb(0xEA, 0xEE, 0xF4));
+                Resources["BgHeader"] = new SolidColorBrush(Color.FromRgb(0xDE, 0xE4, 0xEC));
+                Resources["BgSubHeader"] = new SolidColorBrush(Color.FromRgb(0xD5, 0xDC, 0xE6));
+                Resources["BgCard"] = new SolidColorBrush(Color.FromRgb(0xFF, 0xFF, 0xFF));
+                Resources["BgSubCard"] = new SolidColorBrush(Color.FromRgb(0xF1, 0xF5, 0xF9));
+                Resources["BgBox"] = new SolidColorBrush(Color.FromRgb(0xFF, 0xFF, 0xFF));
+                Resources["BorderCard"] = new SolidColorBrush(Color.FromRgb(0xCB, 0xD5, 0xE1));
+                Resources["BorderHeader"] = new SolidColorBrush(Color.FromRgb(0xB0, 0xBF, 0xD0));
+                Resources["TextMain"] = new SolidColorBrush(Color.FromRgb(0x0F, 0x17, 0x2A));
+                Resources["TextMuted"] = new SolidColorBrush(Color.FromRgb(0x64, 0x74, 0x8B));
+                Resources["TextConsole"] = new SolidColorBrush(Color.FromRgb(0x03, 0x69, 0xA1));
+                Resources["DgBg"] = new SolidColorBrush(Color.FromRgb(0xFF, 0xFF, 0xFF));
+                Resources["DgRowBg"] = new SolidColorBrush(Color.FromRgb(0xFF, 0xFF, 0xFF));
+                Resources["DgAltRowBg"] = new SolidColorBrush(Color.FromRgb(0xF8, 0xFA, 0xFC));
+                Resources["DgHeaderBg"] = new SolidColorBrush(Color.FromRgb(0xEE, 0xF2, 0xF6));
+                Resources["DgGridLines"] = new SolidColorBrush(Color.FromRgb(0xE2, 0xE8, 0xF0));
+
+                // Button colors (Açık temada şık, aydınlık, yumuşak gri/beyaz butonlar + koyu net yazılar)
+                Resources["BtnToolBg"] = new SolidColorBrush(Color.FromRgb(0xFF, 0xFF, 0xFF));
+                Resources["BtnToolFg"] = new SolidColorBrush(Color.FromRgb(0x1E, 0x29, 0x3B));
+                Resources["BtnToolBorder"] = new SolidColorBrush(Color.FromRgb(0x94, 0xA3, 0xB8));
+                Resources["BtnToolHoverBg"] = new SolidColorBrush(Color.FromRgb(0xE0, 0xF2, 0xFE));
+                Resources["BtnToolHoverFg"] = new SolidColorBrush(Color.FromRgb(0x02, 0x84, 0xC7));
+                Resources["BtnToolHoverBorder"] = new SolidColorBrush(Color.FromRgb(0x02, 0x84, 0xC7));
+
+                Resources["BtnDangerBg"] = new SolidColorBrush(Color.FromRgb(0xFE, 0xE2, 0xE2));
+                Resources["BtnDangerFg"] = new SolidColorBrush(Color.FromRgb(0x99, 0x1B, 0x1B));
+                Resources["BtnDangerBorder"] = new SolidColorBrush(Color.FromRgb(0xEF, 0x44, 0x44));
+                Resources["BtnDangerHoverBg"] = new SolidColorBrush(Color.FromRgb(0xFE, 0xCD, 0xCD));
+
+                Resources["BtnMiniBg"] = new SolidColorBrush(Color.FromRgb(0xFF, 0xFF, 0xFF));
+                Resources["BtnMiniFg"] = new SolidColorBrush(Color.FromRgb(0x33, 0x41, 0x55));
+                Resources["BtnMiniBorder"] = new SolidColorBrush(Color.FromRgb(0x94, 0xA3, 0xB8));
+                Resources["BtnMiniHoverBg"] = new SolidColorBrush(Color.FromRgb(0xF1, 0xF5, 0xF9));
+            }
+        }
+
+        private async void CmbProjects_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (_suppressProjectSelectionChange) return;
+            if (CmbProjects.SelectedItem is TiaProcessItem proc && proc != null)
+            {
+                if (_currentProject == null || _currentProject.FilePath != proc.ProjectPath)
+                {
+                    try
+                    {
+                        AddStep("TIA", $"Seçilen sürece bağlanılıyor (PID: {proc.ProcessId})...", true);
+                        var proj = await Task.Run(() => _tiaService.ConnectToProcess(proc));
+                        if (proj != null)
+                        {
+                            _currentProject = proj;
+                            var plcs = await Task.Run(() => _tiaService.GetPlcList(_currentProject));
+                            CmbPlc.ItemsSource = plcs;
+                            if (plcs.Count > 0)
+                            {
+                                _selectedPlc = plcs[0];
+                                CmbPlc.SelectedIndex = 0;
+                            }
+                            DotTiaStatus.Fill = new SolidColorBrush(Color.FromRgb(16, 185, 129));
+                            TxtTiaStatus.Text = $"Bağlı: {_currentProject.Name}  |  PLC: {_selectedPlc?.Name ?? "-"}";
+                            TxtTiaStatus.Foreground = new SolidColorBrush(Color.FromRgb(4, 120, 87));
+                            AddStep("TIA", $"TIA projesine bağlanıldı: {_currentProject.Name}", true);
+                            await ReadCurrentProjectOverviewAsync();
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        var baseEx = ex.GetBaseException() ?? ex;
+                        AppendDetailedLog("Projeye bağlanırken hata: " + baseEx.Message);
+                        AddStep("TIA", $"Bağlantı hatası: {baseEx.Message}", false);
+                    }
+                }
+            }
+        }
+
+        private void BtnDisconnectTia_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                _currentProject = null;
+                _selectedPlc = null;
+                CmbPlc.ItemsSource = null;
+                DotTiaStatus.Fill = new SolidColorBrush(Color.FromRgb(100, 116, 139));
+                TxtTiaStatus.Text = "Bağlantı kesildi | Aktif Proje: -";
+                TxtTiaStatus.Foreground = new SolidColorBrush(Color.FromRgb(148, 163, 184));
+                AddStep("TIA", "TIA Portal bağlantısı kesildi", true);
+                _bridgeService?.WriteStatusFile();
+            }
+            catch (Exception ex)
+            {
+                AppendDetailedLog("Bağlantı kesme hatası: " + ex.Message);
+            }
+        }
+
+        private void BtnRestartApp_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                try { _bridgeService?.Dispose(); } catch { }
+                try { _tiaService?.Dispose(); } catch { }
+
+                string exePath = Process.GetCurrentProcess().MainModule.FileName;
+                Process.Start(new ProcessStartInfo(exePath)
+                {
+                    WorkingDirectory = AppDomain.CurrentDomain.BaseDirectory
+                });
+                Application.Current.Shutdown();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Yeniden başlatılamadı: " + ex.Message, "Hata", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private void LoadSavedBridgeActive()
+        {
+            try
+            {
+                string bridgeFile = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "selected_bridge_active.txt");
+                if (File.Exists(bridgeFile))
+                {
+                    string saved = File.ReadAllText(bridgeFile, Encoding.UTF8).Trim();
+                    if (string.Equals(saved, "false", StringComparison.OrdinalIgnoreCase) || string.Equals(saved, "0", StringComparison.OrdinalIgnoreCase))
+                    {
+                        SetBridgeActive(false, logAction: false);
+                        return;
+                    }
+                }
+            }
+            catch { }
+            SetBridgeActive(true, logAction: false);
+        }
+
+        private void SetBridgeActive(bool active, bool logAction = true)
+        {
+            _isBridgeActive = active;
+            bool isEn = string.Equals(_currentLanguage, "en", StringComparison.OrdinalIgnoreCase);
+
+            if (_isBridgeActive)
+            {
+                if (DotAiStatus != null) DotAiStatus.Fill = new SolidColorBrush(Color.FromRgb(16, 185, 129));
+                if (TxtAiStatus != null)
+                {
+                    TxtAiStatus.Text = isEn ? "localhost:19520 (Active)" : "localhost:19520 (Aktif)";
+                    TxtAiStatus.Foreground = new SolidColorBrush(Color.FromRgb(52, 211, 153));
+                }
+                if (BtnToggleBridge != null) BtnToggleBridge.Content = isEn ? "🟢 Bridge Active" : "🟢 Köprü Açık";
+                if (logAction)
+                    AddStep("AI", isEn ? "AI Bridge ENABLED by user" : "AI Köprüsü kullanıcı tarafından AKTİF yapıldı", true);
+            }
+            else
+            {
+                if (DotAiStatus != null) DotAiStatus.Fill = new SolidColorBrush(Color.FromRgb(239, 68, 68));
+                if (TxtAiStatus != null)
+                {
+                    TxtAiStatus.Text = isEn ? "Bridge Inactive" : "Köprü Pasif";
+                    TxtAiStatus.Foreground = new SolidColorBrush(Color.FromRgb(248, 113, 113));
+                }
+                if (BtnToggleBridge != null) BtnToggleBridge.Content = isEn ? "🔴 Bridge Inactive" : "🔴 Köprü Kapalı";
+                if (logAction)
+                    AddStep("AI", isEn ? "AI Bridge DISABLED by user" : "AI Köprüsü kullanıcı tarafından PASİF yapıldı", false);
+            }
+
+            try
+            {
+                string bridgeFile = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "selected_bridge_active.txt");
+                File.WriteAllText(bridgeFile, active ? "true" : "false", Encoding.UTF8);
+            }
+            catch { }
+
+            _bridgeService?.WriteStatusFile();
+        }
+
+        private void BtnToggleBridge_Click(object sender, RoutedEventArgs e)
+        {
+            SetBridgeActive(!_isBridgeActive, logAction: true);
+        }
+
+        private void BtnClearAiLogs_Click(object sender, RoutedEventArgs e)
+        {
+            _steps.Clear();
+            _bridgeService?.WriteStatusFile();
+        }
+
+        private void BtnCopyAiLogs_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                var sb = new StringBuilder();
+                foreach (var step in _steps)
+                {
+                    sb.AppendLine($"[{step.Time}] {step.Icon} {step.JobText}");
+                }
+                Clipboard.SetText(sb.ToString());
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Kopyalama hatası: " + ex.Message);
+            }
+        }
+
+        private void BtnClearTiaLogs_Click(object sender, RoutedEventArgs e)
+        {
+            lock (_detailedLogEntries) { _detailedLogEntries.Clear(); }
+            TxtDetailedLog.Text = "";
+        }
+
+        private void BtnCopyTiaLogs_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                if (!string.IsNullOrEmpty(TxtDetailedLog.Text))
+                {
+                    Clipboard.SetText(TxtDetailedLog.Text);
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Kopyalama hatası: " + ex.Message);
+            }
         }
     }
 }

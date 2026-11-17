@@ -11,6 +11,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Xml.Linq;
 using Microsoft.Win32;
+using System.Web.Script.Serialization;
 using TIAgent.Models;
 
 namespace TIAgent.Services
@@ -2004,7 +2005,7 @@ namespace TIAgent.Services
         }
 
         // =========================================================================================
-        // ONLINE LADDER — TAM PAKET AKTARIMI (TAG + GLOBAL DB + INSTANCE DB + LAD/SCL BLOK + OB1)
+        // TIAGENT MCP SERVER — TAM PAKET AKTARIMI (TAG + GLOBAL DB + INSTANCE DB + LAD/SCL BLOK + OB1)
         // =========================================================================================
 
         public ProjectOverviewInfo ReadProjectOverview(TiaProjectItem project, TiaPlcItem plc)
@@ -2275,26 +2276,33 @@ namespace TIAgent.Services
                 {
                     try
                     {
-                        if (!string.IsNullOrWhiteSpace(item.DataType))
+                        string targetType = NormalizeDbDatatypeForXml(item.DataType ?? "Bool");
+                        string targetAddr = string.IsNullOrWhiteSpace(item.LogicalAddress) ? "%M0.0" : item.LogicalAddress.Trim();
+                        string curType = GetPropString(existTagObj, "DataTypeName");
+                        string curAddr = GetPropString(existTagObj, "LogicalAddress");
+
+                        // If data type or address changed, delete the old tag so it gets re-created atomically
+                        // with the new type and address to prevent Siemens Openness mismatch errors
+                        if (!string.Equals(curType, targetType, StringComparison.OrdinalIgnoreCase) ||
+                            !string.Equals(curAddr, targetAddr, StringComparison.OrdinalIgnoreCase))
                         {
-                            string targetType = NormalizeDbDatatypeForXml(item.DataType);
-                            string curType = GetPropString(existTagObj, "DataTypeName");
-                            if (!string.Equals(curType, targetType, StringComparison.OrdinalIgnoreCase))
-                                existTagObj.GetType().GetProperty("DataTypeName")?.SetValue(existTagObj, targetType, null);
-                        }
-                        if (!string.IsNullOrWhiteSpace(item.LogicalAddress))
-                        {
-                            string targetAddr = item.LogicalAddress.Trim();
-                            string curAddr = GetPropString(existTagObj, "LogicalAddress");
-                            if (!string.Equals(curAddr, targetAddr, StringComparison.OrdinalIgnoreCase))
-                                existTagObj.GetType().GetProperty("LogicalAddress")?.SetValue(existTagObj, targetAddr, null);
+                            try
+                            {
+                                MethodInfo del = existTagObj.GetType().GetMethod("Delete", Type.EmptyTypes);
+                                del?.Invoke(existTagObj, null);
+                                existTagObj = null;
+                            }
+                            catch { }
                         }
                     }
                     catch { }
 
-                    _cachedDefinedGlobalSymbols.Add(cleanName);
-                    _cachedPlcTagTypes[cleanName] = item.DataType ?? "Bool";
-                    continue;
+                    if (existTagObj != null)
+                    {
+                        _cachedDefinedGlobalSymbols.Add(cleanName);
+                        _cachedPlcTagTypes[cleanName] = item.DataType ?? "Bool";
+                        continue;
+                    }
                 }
 
                 try
@@ -2745,6 +2753,37 @@ namespace TIAgent.Services
                     {
                         _log($"Yedekleme tamamlandı ({backedUp} mevcut blok yedeklendi): {targetDir}");
                     }
+
+                    // Kayıt manifestosu (operation.json): Zaman, işlem ve blok bazlı geri alma bilgisi
+                    try
+                    {
+                        var backedUpNames = new List<string>();
+                        foreach (var f in Directory.GetFiles(targetDir, "*.xml"))
+                        {
+                            backedUpNames.Add(Path.GetFileNameWithoutExtension(f));
+                        }
+
+                        var opInfo = new BackupOperationItem
+                        {
+                            Id = folderName,
+                            Timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"),
+                            OperationName = !string.IsNullOrWhiteSpace(pkg.Title) ? pkg.Title : pkg.PackageName,
+                            PackageName = pkg.PackageName,
+                            Prompt = pkg.SourcePrompt ?? "",
+                            SourceChannel = pkg.SourceChannel ?? "AI",
+                            PlcName = plc.Name,
+                            BackupFolderPath = targetDir,
+                            BackedUpBlocks = backedUpNames,
+                            CreatedBlocks = pkg.Blocks?.Select(b => b.Name).Where(n => !string.IsNullOrWhiteSpace(n)).ToList() ?? new List<string>(),
+                            CreatedDataBlocks = pkg.DataBlocks?.Select(d => d.Name).Where(n => !string.IsNullOrWhiteSpace(n)).ToList() ?? new List<string>(),
+                            CreatedTags = pkg.Tags?.Select(t => t.Name).Where(n => !string.IsNullOrWhiteSpace(n)).ToList() ?? new List<string>()
+                        };
+
+                        var serializer = new JavaScriptSerializer();
+                        string json = serializer.Serialize(opInfo);
+                        File.WriteAllText(Path.Combine(targetDir, "operation.json"), json, Encoding.UTF8);
+                    }
+                    catch { }
                 }
                 catch (Exception ex)
                 {
@@ -2752,6 +2791,121 @@ namespace TIAgent.Services
                 }
             });
             return createdBackupDir;
+        }
+
+        public bool RollbackBackupOperation(
+            TiaPlcItem plc,
+            BackupOperationItem op,
+            Action<string, string, bool> stepCallback,
+            out string error)
+        {
+            error = "";
+            if (plc?.RawPlcSoftware == null)
+            {
+                error = "Hedef PLC bağlı değil.";
+                return false;
+            }
+            if (op == null || !Directory.Exists(op.BackupFolderPath))
+            {
+                error = "Yedek klasörü bulunamadı: " + (op?.BackupFolderPath ?? "null");
+                return false;
+            }
+
+            bool ok = false;
+            string localError = "";
+            RunOnOpennessThread(() =>
+            {
+                try
+                {
+                    stepCallback?.Invoke("geri-al", $"{op.OperationName} ({op.Timestamp}) geri alınıyor...", true);
+
+                    object blockGroup = GetPropValue(plc.RawPlcSoftware, "BlockGroup");
+                    object blocksComp = GetPropValue(blockGroup, "Blocks");
+                    MethodInfo findBlock = blocksComp?.GetType().GetMethod("Find", new[] { typeof(string) });
+                    Type blocksType = blocksComp?.GetType();
+                    MethodInfo importMethod = blocksType?.GetMethods()
+                        .FirstOrDefault(m => m.Name == "Import" && m.GetParameters().Length == 2);
+
+                    // 1. İşlem sırasında oluşturulmuş olan yeni blokları kaldır (öncesinde var olan yedek listesinde olmayanlar)
+                    var preExisting = new HashSet<string>(op.BackedUpBlocks ?? new List<string>(), StringComparer.OrdinalIgnoreCase);
+                    var toDelete = new List<string>();
+                    if (op.CreatedBlocks != null) toDelete.AddRange(op.CreatedBlocks);
+                    if (op.CreatedDataBlocks != null) toDelete.AddRange(op.CreatedDataBlocks);
+
+                    int deletedCount = 0;
+                    foreach (var blkName in toDelete.Distinct(StringComparer.OrdinalIgnoreCase))
+                    {
+                        if (!preExisting.Contains(blkName) && findBlock != null)
+                        {
+                            try
+                            {
+                                object existingBlk = findBlock.Invoke(blocksComp, new object[] { blkName });
+                                if (existingBlk != null)
+                                {
+                                    MethodInfo deleteMethod = existingBlk.GetType().GetMethod("Delete");
+                                    deleteMethod?.Invoke(existingBlk, null);
+                                    deletedCount++;
+                                    stepCallback?.Invoke("geri-al", $"Oluşturulan '{blkName}' bloğu kaldırıldı.", true);
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                stepCallback?.Invoke("geri-al", $"'{blkName}' silinirken uyarı: {ex.Message}", false);
+                            }
+                        }
+                    }
+
+                    // 2. Yedek klasöründeki orijinal SimaticML XML dosyalarını tekrar TIA Portal'a aktar (Override)
+                    var xmlFiles = Directory.GetFiles(op.BackupFolderPath, "*.xml");
+                    int restoredCount = 0;
+                    Type importOptionsType = FindEngineeringType("Siemens.Engineering.ImportOptions");
+                    importMethod = blocksComp?.GetType().GetMethod("Import", new[] { typeof(FileInfo), importOptionsType }) ?? importMethod;
+                    object optOverride = importOptionsType != null ? Enum.Parse(importOptionsType, "Override") : null;
+
+                    foreach (var xmlFile in xmlFiles)
+                    {
+                        string fileName = Path.GetFileNameWithoutExtension(xmlFile);
+                        try
+                        {
+                            if (importMethod != null && blocksComp != null)
+                            {
+                                InvokeBlocksImport(importMethod, blocksComp, xmlFile, optOverride);
+                                restoredCount++;
+                                stepCallback?.Invoke("geri-al", $"'{fileName}' bloğu orijinal haline döndürüldü.", true);
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            stepCallback?.Invoke("geri-al", $"'{fileName}' geri yüklenirken hata: {ex.Message}", false);
+                        }
+                    }
+
+                    // 3. PLC Yazılımını Derle
+                    CompileBlock(plc.RawPlcSoftware, out string compileSummary);
+                    stepCallback?.Invoke("geri-al", $"İşlem geri alındı ({restoredCount} blok restore edildi, {deletedCount} yeni blok temizlendi). Derleme: {compileSummary}", true);
+
+                    op.IsRolledBack = true;
+                    try
+                    {
+                        string manifestPath = Path.Combine(op.BackupFolderPath, "operation.json");
+                        var serializer = new JavaScriptSerializer();
+                        string json = serializer.Serialize(op);
+                        File.WriteAllText(manifestPath, json, Encoding.UTF8);
+                    }
+                    catch { }
+
+                    ok = true;
+                }
+                catch (Exception ex)
+                {
+                    localError = ex.Message;
+                    stepCallback?.Invoke("geri-al", $"Geri alma hatası: {ex.Message}", false);
+                    ok = false;
+                }
+            });
+
+            error = localError;
+            return ok;
         }
 
         public bool ImportFullPackage(
@@ -3623,7 +3777,7 @@ namespace TIAgent.Services
                     targetMainTitleKeywords.Add("Network");
                 }
 
-                if (targetBlockNames.Count == 0 && targetMainWrittenSymbols.Count == 0 &&
+                if (targetBlockNames.Count == 0 && targetTagTables.Count == 0 && targetMainWrittenSymbols.Count == 0 &&
                     targetMainTitleKeywords.Count == 0 && targetMainNetworkIndices.Count == 0 && !clearAllMainNetworks)
                 {
                     localSummary = "Kaldırılacak blok veya network tespit edilemedi.";
@@ -3961,6 +4115,7 @@ namespace TIAgent.Services
                     if (tagTableGroup != null)
                     {
                         DeleteMatchingTagTablesRecursive(tagTableGroup, targetTagTables, deletedItems, stepCallback);
+                        _cachedPlcTagTypes.Clear();
                     }
                 }
 
@@ -4070,6 +4225,52 @@ namespace TIAgent.Services
             }
         }
 
+        private void ClearAllTagsInTable(
+            object tagTableObj,
+            string tableName,
+            List<string> deletedItems,
+            Action<string, string, bool> stepCallback)
+        {
+            if (tagTableObj == null) return;
+            try
+            {
+                object tagsComp = GetPropValue(tagTableObj, "Tags");
+                if (tagsComp is IEnumerable tagsEnum)
+                {
+                    var tagsList = new List<object>();
+                    foreach (var t in tagsEnum)
+                    {
+                        tagsList.Add(t);
+                    }
+
+                    int deletedTagCount = 0;
+                    foreach (var t in tagsList)
+                    {
+                        try
+                        {
+                            MethodInfo tDel = t.GetType().GetMethod("Delete", Type.EmptyTypes);
+                            if (tDel != null)
+                            {
+                                tDel.Invoke(t, null);
+                                deletedTagCount++;
+                            }
+                        }
+                        catch { }
+                    }
+
+                    if (deletedTagCount > 0)
+                    {
+                        deletedItems.Add($"Taglar({tableName}):{deletedTagCount}");
+                        stepCallback?.Invoke("silme", $"'{tableName}' içerisindeki {deletedTagCount} adet PLC tagı silindi", true);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _log($"'{tableName}' tagları temizlenirken hata: {ex.Message}");
+            }
+        }
+
         private void DeleteMatchingTagTablesRecursive(
             object currentTagGroup,
             HashSet<string> targetTableNames,
@@ -4093,6 +4294,16 @@ namespace TIAgent.Services
 
                 foreach (var item in toDelete)
                 {
+                    bool isDefaultTable = string.Equals(item.Item1, "Default tag table", StringComparison.OrdinalIgnoreCase) ||
+                                          string.Equals(item.Item1, "Standart-Variablentabelle", StringComparison.OrdinalIgnoreCase) ||
+                                          string.Equals(item.Item1, "Standart tag tablosu", StringComparison.OrdinalIgnoreCase);
+
+                    if (isDefaultTable)
+                    {
+                        ClearAllTagsInTable(item.Item2, item.Item1, deletedItems, stepCallback);
+                        continue;
+                    }
+
                     try
                     {
                         MethodInfo delMethod = item.Item2.GetType().GetMethod("Delete", Type.EmptyTypes);
@@ -4105,7 +4316,8 @@ namespace TIAgent.Services
                     }
                     catch (Exception ex)
                     {
-                        _log($"Tag tablosu '{item.Item1}' silinirken uyarı: {ex.GetBaseException()?.Message ?? ex.Message}");
+                        _log($"Tag tablosu '{item.Item1}' silinirken uyarı: {ex.GetBaseException()?.Message ?? ex.Message}. İçindeki taglar temizleniyor...");
+                        ClearAllTagsInTable(item.Item2, item.Item1, deletedItems, stepCallback);
                     }
                 }
             }

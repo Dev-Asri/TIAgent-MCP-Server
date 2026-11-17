@@ -1403,7 +1403,7 @@ namespace TIAgent.Services
 
                 if (IsSimpleOperand(minVal) && IsSimpleOperand(valArg) && IsSimpleOperand(maxVal))
                 {
-                    string partName = upperFn == "NORM_X" ? "Norm_X" : "Scale_X";
+                    string partName = upperFn == "NORM_X" ? "Normalize" : "Scale_X";
                     string srcType;
                     string destType;
 

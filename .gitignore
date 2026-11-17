@@ -55,3 +55,7 @@ AiSettings.json
 *.zap19
 *.zap20
 *.zap21
+# Gecici test ve scratch dosyalari
+scratch/
+test_*.py
+verify_*.py

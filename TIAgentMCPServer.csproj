@@ -8,7 +8,7 @@
     <UseWPF>true</UseWPF>
     <UseWindowsForms>true</UseWindowsForms>
     <LangVersion>latest</LangVersion>
-    <AssemblyName>TIAgent</AssemblyName>
+    <AssemblyName>TIAgent MCP Server</AssemblyName>
     <RootNamespace>TIAgent</RootNamespace>
     <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
     <Title>TIAgent MCP Server — AI · TIA Portal V14-V21</Title>

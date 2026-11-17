@@ -6,8 +6,9 @@
 [![TIA Portal](https://img.shields.io/badge/Siemens%20TIA%20Portal-V14%20SP1%20--%20V21-orange.svg)]()
 [![MCP](https://img.shields.io/badge/Protocol-Model%20Context%20Protocol%20(MCP)-blueviolet.svg)]()
 [![OpenAPI](https://img.shields.io/badge/API-OpenAPI%203.0%20%2F%20Swagger-green.svg)]()
-[![Demo Video](https://img.shields.io/badge/Demo%20Video-Watch%20MP4-red?style=flat&logo=youtube)](https://github.com/Dev-Asri/TIAgent-MCP-Server/blob/main/TIAgentMcpServer.mp4)
-[![Release](https://img.shields.io/badge/Release-v1.0.0-blue)](https://github.com/Dev-Asri/TIAgent-MCP-Server/releases/tag/v1.0.0)
+[![Demo 1: Piston Test](https://img.shields.io/badge/Demo%201-Piston%20Test%20(LAD)-red?style=flat&logo=youtube)](https://github.com/Dev-Asri/TIAgent-MCP-Server/blob/main/TIAgent%20Piston%20Test.mp4)
+[![Demo 2: Clear Program](https://img.shields.io/badge/Demo%202-Delete%20All%20Program-blue?style=flat&logo=youtube)](https://github.com/Dev-Asri/TIAgent-MCP-Server/blob/main/TIAgent%20Delete%20All%20Program.mp4)
+[![Release](https://img.shields.io/badge/Release-v1.0.0-success)](https://github.com/Dev-Asri/TIAgent-MCP-Server/releases/tag/v1.0.0)
 
 > **Quick Language / Hızlı Dil Seçimi:**  
 > 🇹🇷 **[Türkçe Dokümantasyon](#-türkçe-dokümantasyon)** | 🇬🇧 **[English Documentation](#-english-documentation)** | 🎬 **[Demo Video / Tanıtım](#-tanıtım-ve-demo-videosu)**
@@ -18,6 +19,12 @@
   <img src="tiagent_mcp_server.jpg" alt="TIAgent MCP Server UI" width="900">
   <br>
   <em>TIAgent MCP Server — Kullanıcı Arayüzü, Canlı Onay Çubuğu ve Siemens TIA Portal Entegrasyonu / User Interface & Live Approval Workflow</em>
+</p>
+
+<p align="center">
+  <img src="protokol_diyagrami.jpg" alt="TIAgent MCP Server Protokol ve Mimari Diyagramı" width="900">
+  <br>
+  <em>Evrensel Çoklu Yapay Zekâ (Multi-Agent) ve Siemens TIA Portal Openness Protokol Mimarisi / Universal Multi-Agent Protocol Architecture</em>
 </p>
 
 ---
@@ -33,11 +40,19 @@ Uygulama, yerel HTTP REST API (`http://localhost:19520`), stdio MCP sunucusu (`t
 ---
 
 <a name="-tanıtım-ve-demo-videosu"></a>
-### 🎬 Tanıtım ve Canlı Demo Videosu
-TIAgent MCP Server'ın Siemens TIA Portal ile nasıl etkileşime girdiğini, yapay zekâ ajanlarından gelen komutların Ladder devresi ve tag tablolarına nasıl dönüştüğünü, onay mekanizmasını ve canlı PLC entegrasyonunu izleyebilirsiniz:
+### 🎬 Tanıtım ve Canlı Demo Videoları
+TIAgent MCP Server'ın Siemens TIA Portal ile nasıl etkileşime girdiğini, yapay zekâ ajanlarından gelen komutların Ladder devresi ve tag tablolarına nasıl dönüştüğünü, onay mekanizmasını ve canlı PLC entegrasyonunu aşağıdaki videolar üzerinden izleyebilirsiniz:
 
-- 📺 **[GitHub Üzerinde İzle (TIAgentMcpServer.mp4)](https://github.com/Dev-Asri/TIAgent-MCP-Server/blob/main/TIAgentMcpServer.mp4)** *(GitHub web oynatıcısında hemen oynatılır)*
-- 📥 **[Doğrudan İndir (13.4 MB MP4)](https://github.com/Dev-Asri/TIAgent-MCP-Server/raw/main/TIAgentMcpServer.mp4)**
+#### 1. Piston Basınç Testi & PWM Oransal Valf Sürüş Demosu (LAD)
+- 📺 **[GitHub Üzerinde İzle (TIAgent Piston Test.mp4)](https://github.com/Dev-Asri/TIAgent-MCP-Server/blob/main/TIAgent%20Piston%20Test.mp4)**
+- 📥 **[Doğrudan İndir (15.9 MB MP4)](https://github.com/Dev-Asri/TIAgent-MCP-Server/raw/main/TIAgent%20Piston%20Test.mp4)**
+- *İçerik:* S7-1214 PLC için 2x 250 Bar analog sensör NORM_X/SCALE_X işlemleri, PWM 1 oransal valf analog çıkışı (%QW1000), manuel/otomatik paralel bağlantıları, basınçta bekleme ve kaçak testi, güvenlik bariyeri (`I_Bariyer`) entegrasyonu ve sıfır hata ile otomatik PLC derlemesi.
+
+#### 2. Proje Bloklarını ve Tag Tablolarını Güvenli Temizleme Demosu
+- 📺 **[GitHub Üzerinde İzle (TIAgent Delete All Program.mp4)](https://github.com/Dev-Asri/TIAgent-MCP-Server/blob/main/TIAgent%20Delete%20All%20Program.mp4)**
+- 📥 **[Doğrudan İndir (2.1 MB MP4)](https://github.com/Dev-Asri/TIAgent-MCP-Server/raw/main/TIAgent%20Delete%20All%20Program.mp4)**
+- *İçerik:* TIA Portal projesindeki tüm program blokları (OB, FB, FC), Veri Blokları (DB) ve PLC Tag tablolarının tek tıkla/komutla temizlenip projenin sıfır hata ile derlenmesi.
+
 - 📦 **[v1.0.0 Release Sayfasından İndir](https://github.com/Dev-Asri/TIAgent-MCP-Server/releases/tag/v1.0.0)**
 
 ---

@@ -67,6 +67,10 @@ namespace TIAgent.Models
         private string _iconColor;
         private string _category;
         private string _jobText;
+        private string _jobTextTr;
+        private string _jobTextEn;
+        private string _statusTr;
+        private string _statusEn;
 
         public string Time
         {
@@ -98,6 +102,49 @@ namespace TIAgent.Models
             set { _jobText = value; OnPropertyChanged(); }
         }
 
+        public string JobTextTr
+        {
+            get => _jobTextTr;
+            set => _jobTextTr = value;
+        }
+
+        public string JobTextEn
+        {
+            get => _jobTextEn;
+            set => _jobTextEn = value;
+        }
+
+        public string StatusTr
+        {
+            get => _statusTr;
+            set => _statusTr = value;
+        }
+
+        public string StatusEn
+        {
+            get => _statusEn;
+            set => _statusEn = value;
+        }
+
+        public void UpdateLanguage(string lang)
+        {
+            bool isEn = string.Equals(lang, "en", StringComparison.OrdinalIgnoreCase);
+            if (isEn)
+            {
+                if (!string.IsNullOrEmpty(_jobTextEn))
+                    JobText = _jobTextEn;
+                if (!string.IsNullOrEmpty(_statusEn))
+                    Icon = _statusEn;
+            }
+            else
+            {
+                if (!string.IsNullOrEmpty(_jobTextTr))
+                    JobText = _jobTextTr;
+                if (!string.IsNullOrEmpty(_statusTr))
+                    Icon = _statusTr;
+            }
+        }
+
         public event PropertyChangedEventHandler PropertyChanged;
         protected void OnPropertyChanged([CallerMemberName] string name = null)
             => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
@@ -125,6 +172,12 @@ namespace TIAgent.Models
         }
 
         public string LogicalAddress
+        {
+            get => _logicalAddress;
+            set { _logicalAddress = value; OnPropertyChanged(); }
+        }
+
+        public string Address
         {
             get => _logicalAddress;
             set { _logicalAddress = value; OnPropertyChanged(); }
@@ -310,17 +363,27 @@ namespace TIAgent.Models
                    (TechnologyObjectsToDelete?.Count ?? 0) > 0;
         }
 
-        public string GetApprovalSummaryText(string plcName, string uiFolderOverride)
+        public string GetApprovalSummaryText(string plcName, string uiFolderOverride, string lang = "tr")
         {
+            bool isEn = string.Equals(lang, "en", StringComparison.OrdinalIgnoreCase);
             string effectiveFolder = !string.IsNullOrWhiteSpace(TargetFolder) ? TargetFolder.Trim() : (uiFolderOverride ?? "").Trim();
             string targetPath = string.IsNullOrEmpty(effectiveFolder)
                 ? $"{plcName ?? "PLC"} > Program blocks"
                 : $"{plcName ?? "PLC"} > Program blocks > {effectiveFolder}";
 
             var sb = new System.Text.StringBuilder();
-            sb.AppendLine($"Paket: {PackageName} ({Language}) — {Title}");
-            sb.AppendLine($"Hedef: {targetPath}");
-            sb.AppendLine("İçerik:");
+            if (isEn)
+            {
+                sb.AppendLine($"AI Request: {PackageName} ({Language}) — {Title}");
+                sb.AppendLine($"PLC Location: {targetPath}");
+                sb.AppendLine("Process Details:");
+            }
+            else
+            {
+                sb.AppendLine($"AI Talebi: {PackageName} ({Language}) — {Title}");
+                sb.AppendLine($"PLC Konumu: {targetPath}");
+                sb.AppendLine("İşlem Detayları:");
+            }
 
             foreach (var b in Blocks)
             {
@@ -464,6 +527,78 @@ namespace TIAgent.Models
         public List<PlcTagEntry> ExistingTags { get; set; } = new List<PlcTagEntry>();
         public List<string> ExistingDataBlocks { get; set; } = new List<string>();
         public List<SclBlockItem> ExistingProgramBlocks { get; set; } = new List<SclBlockItem>();
+    }
+
+    public class BackupOperationItem : INotifyPropertyChanged
+    {
+        public string Id { get; set; }
+        public string Timestamp { get; set; }
+        public string OperationName { get; set; }
+        public string PackageName { get; set; }
+        public string Prompt { get; set; }
+        public string SourceChannel { get; set; }
+        public string PlcName { get; set; }
+        public string BackupFolderPath { get; set; }
+        public List<string> BackedUpBlocks { get; set; } = new List<string>();
+        public List<string> CreatedBlocks { get; set; } = new List<string>();
+        public List<string> CreatedDataBlocks { get; set; } = new List<string>();
+        public List<string> CreatedTags { get; set; } = new List<string>();
+        public bool IsRolledBack { get; set; } = false;
+
+        private string _language = "tr";
+        public string Language
+        {
+            get => _language;
+            set
+            {
+                _language = value;
+                OnPropertyChanged(nameof(DisplaySummary));
+                OnPropertyChanged(nameof(StatusDisplay));
+                OnPropertyChanged(nameof(RollbackButtonText));
+            }
+        }
+
+        public string DisplaySummary
+        {
+            get
+            {
+                bool isEn = string.Equals(_language, "en", StringComparison.OrdinalIgnoreCase);
+                var parts = new List<string>();
+                if (BackedUpBlocks != null && BackedUpBlocks.Count > 0)
+                    parts.Add(isEn ? $"Backed up: {string.Join(", ", BackedUpBlocks)}" : $"Yedeklenen: {string.Join(", ", BackedUpBlocks)}");
+                if (CreatedBlocks != null && CreatedBlocks.Count > 0)
+                    parts.Add(isEn ? $"Created: {string.Join(", ", CreatedBlocks)}" : $"Eklenen: {string.Join(", ", CreatedBlocks)}");
+                if (CreatedDataBlocks != null && CreatedDataBlocks.Count > 0)
+                    parts.Add($"DB: {string.Join(", ", CreatedDataBlocks)}");
+                return parts.Count > 0 ? string.Join(" | ", parts) : (isEn ? "General operation backup" : "Genel işlem yedeği");
+            }
+        }
+
+        public string StatusDisplay
+        {
+            get
+            {
+                bool isEn = string.Equals(_language, "en", StringComparison.OrdinalIgnoreCase);
+                return IsRolledBack
+                    ? (isEn ? "↺ Rolled Back" : "↺ Geri Alındı")
+                    : (isEn ? "✓ Active" : "✓ Aktif");
+            }
+        }
+
+        public string StatusColor => IsRolledBack ? "#F59E0B" : "#10B981";
+
+        public string RollbackButtonText
+        {
+            get
+            {
+                bool isEn = string.Equals(_language, "en", StringComparison.OrdinalIgnoreCase);
+                return isEn ? "↺ Rollback" : "↺ Geri Al";
+            }
+        }
+
+        public event PropertyChangedEventHandler PropertyChanged;
+        protected void OnPropertyChanged([CallerMemberName] string name = null)
+            => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
     }
 }
 
