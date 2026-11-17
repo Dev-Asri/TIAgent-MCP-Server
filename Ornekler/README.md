@@ -6,6 +6,7 @@ Bu klasör, TIA Portal projeleri için standart kod şablonlarını, eğitim dok
 - **[Egitim_Norm_Scale_Degisken_Tipleri.md](Egitim_Norm_Scale_Degisken_Tipleri.md):** `NORM_X` ve `SCALE_X` bloklarında `Real` vs `Int` veri tipi kuralları, 16-bit taşma ve `ENO=False` çözümü.
 - **[Paket_Dogrulama_Kurallari.json](Paket_Dogrulama_Kurallari.json):** TIAgent MCP Server'ın gelen her paketi denetlerken başvurduğu makine tarafından okunabilir doğrulama ve otomatik düzeltme kuralları.
 - **[SimaticML_Ve_Paket_Tecrubeleri.md](SimaticML_Ve_Paket_Tecrubeleri.md):** TIA Portal Openness SimaticML derleyici kısıtlamaları, pin/wire bağlantıları ve tecrübe havuzu.
+- **[Asansor_5Katli_LAD_Calisan_Paket.json](Asansor_5Katli_LAD_Calisan_Paket.json):** 38 Network'lük 5 katlı asansör, 0-10V/PWM motor hız kontrolü, yaklaşım ve stop switchli çalışan referans paketi.
 - **[Tup_Kalinlik_Olcum_LAD_Calisan_Paket.json](Tup_Kalinlik_Olcum_LAD_Calisan_Paket.json):** 30 Network'lük çalışan referans kalibrasyon ve tüp ölçüm paketi.
 - **[Piston_Basinc_Testi_LAD_Calisan_Paket.json](Piston_Basinc_Testi_LAD_Calisan_Paket.json):** Çalışan basınç testi ve piston otomasyon paketi.
 
