@@ -98,87 +98,99 @@
       },
       {
         "Name": "I_Asagi_Yaklasim_Sw",
-        "LogicalAddress": "%I1.6",
+        "LogicalAddress": "%I2.0",
         "DataType": "Bool",
         "Comment": "Asagi Yonde Kata Yaklasma / Yavaslama Switchi"
       },
       {
         "Name": "I_Alarm_Reset",
-        "LogicalAddress": "%I1.7",
+        "LogicalAddress": "%I2.1",
         "DataType": "Bool",
         "Comment": "Genel Alarm Resetleme Butonu"
       },
       {
         "Name": "I_Kat1_Cagri_Buton",
-        "LogicalAddress": "%I2.0",
+        "LogicalAddress": "%I2.2",
         "DataType": "Bool",
         "Comment": "1. Kat Dis Cagri Butonu"
       },
       {
         "Name": "I_Kat2_Cagri_Buton",
-        "LogicalAddress": "%I2.1",
+        "LogicalAddress": "%I2.3",
         "DataType": "Bool",
         "Comment": "2. Kat Dis Cagri Butonu"
       },
       {
         "Name": "I_Kat3_Cagri_Buton",
-        "LogicalAddress": "%I2.2",
+        "LogicalAddress": "%I2.4",
         "DataType": "Bool",
         "Comment": "3. Kat Dis Cagri Butonu"
       },
       {
         "Name": "I_Kat4_Cagri_Buton",
-        "LogicalAddress": "%I2.3",
+        "LogicalAddress": "%I2.5",
         "DataType": "Bool",
         "Comment": "4. Kat Dis Cagri Butonu"
       },
       {
         "Name": "I_Kat5_Cagri_Buton",
-        "LogicalAddress": "%I2.4",
+        "LogicalAddress": "%I2.6",
         "DataType": "Bool",
         "Comment": "5. Kat Dis Cagri Butonu"
       },
       {
         "Name": "I_Kabin_Kat1_Hedef",
-        "LogicalAddress": "%I3.0",
+        "LogicalAddress": "%I2.7",
         "DataType": "Bool",
         "Comment": "Kabin Ici 1. Kat Hedef Butonu"
       },
       {
         "Name": "I_Kabin_Kat2_Hedef",
-        "LogicalAddress": "%I3.1",
+        "LogicalAddress": "%I3.0",
         "DataType": "Bool",
         "Comment": "Kabin Ici 2. Kat Hedef Butonu"
       },
       {
         "Name": "I_Kabin_Kat3_Hedef",
-        "LogicalAddress": "%I3.2",
+        "LogicalAddress": "%I3.1",
         "DataType": "Bool",
         "Comment": "Kabin Ici 3. Kat Hedef Butonu"
       },
       {
         "Name": "I_Kabin_Kat4_Hedef",
-        "LogicalAddress": "%I3.3",
+        "LogicalAddress": "%I3.2",
         "DataType": "Bool",
         "Comment": "Kabin Ici 4. Kat Hedef Butonu"
       },
       {
         "Name": "I_Kabin_Kat5_Hedef",
-        "LogicalAddress": "%I3.4",
+        "LogicalAddress": "%I3.3",
         "DataType": "Bool",
         "Comment": "Kabin Ici 5. Kat Hedef Butonu"
       },
       {
         "Name": "I_Kabin_Kapi_Ac_Buton",
-        "LogicalAddress": "%I3.5",
+        "LogicalAddress": "%I3.4",
         "DataType": "Bool",
         "Comment": "Kabin Ici Manuel Kapi Acma Butonu"
       },
       {
         "Name": "I_Kabin_Kapi_Kapat_Buton",
-        "LogicalAddress": "%I3.6",
+        "LogicalAddress": "%I3.5",
         "DataType": "Bool",
         "Comment": "Kabin Ici Manuel Kapi Kapatma Butonu"
+      },
+      {
+        "Name": "REZERVE",
+        "LogicalAddress": "%I3.6",
+        "DataType": "Bool",
+        "Comment": "Rezerve Giris"
+      },
+      {
+        "Name": "REZERVE 1",
+        "LogicalAddress": "%I3.7",
+        "DataType": "Bool",
+        "Comment": "Rezerve 1 Giris"
       },
       {
         "Name": "Q_Motor_Yukari",
