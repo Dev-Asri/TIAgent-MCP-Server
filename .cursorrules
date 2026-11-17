@@ -34,9 +34,10 @@ TIAgent will automatically detect, process, and output results to:
 `Packages/Outbox/<package_name>.json.result.json`
 
 ## Code Guidelines
-- **Ladder (LAD)**: Must be formatted in valid Siemens SimaticML XML. Every contact/coil must have a unique `<Access>` node and unique UIds. Move parts require `<TemplateValue Name="Card" Type="Cardinality">1</TemplateValue>`.
+- **Ladder (LAD)**: Must be formatted in valid Siemens SimaticML XML. Every contact/coil must have a unique `<Access>` node and unique UIds. Move parts require `<TemplateValue Name="Card" Type="Cardinality">1</TemplateValue>`. TON timer unused `ET` pins must have `<OpenCon />`. Binary arithmetic parts like `Sub` do not take `Card`.
 - **SCL**: Standard Siemens Structured Control Language with `VAR / END_VAR` interface definitions.
 - **DataBlocks**: Define `Members` with `Name`, `DataType` (Real, Bool, Int, Word, etc.), and `StartValue`.
+- **NORM_X & SCALE_X Data Types**: Normalized ratio intermediate variables (`*_Norm`) **MUST ALWAYS BE REAL** (`0.0 .. 1.0`), never `Int`. Feeding integer percentages (>1) to `SCALE_X` causes 16-bit integer overflow (>32767), setting `ENO=False` and dropping PWM/analog outputs.
 - **Always verify compilation**: After sending a package, query `GET /api/status` to ensure `recentSteps` reports `Durum: Success (Hata: 0)` or `Warning (Hata: 0)`.
 
 ## İsimlendirme Kuralı (Kesin Yasak)

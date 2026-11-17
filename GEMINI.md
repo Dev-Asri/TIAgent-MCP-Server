@@ -18,7 +18,7 @@ Kullanıcının talimatında belirttiği role göre hareket edilir:
 
 1. **Önce Tecrübeyi Kontrol Et:**
    - Yeni bir devre, blok, DB, tag veya paket hazırlamadan önce **MUTLAKA** `Ornekler/SimaticML_Ve_Paket_Tecrubeleri.md` ve `Ornekler/` klasöründeki çalışan şablonlar kontrol edilir.
-   - Paket; kültür (`en-US`), komut ismi (`NORM_X` için `Normalize`, `SCALE_X` için `Scale_X`), XML karakter kaçışları (`&lt;`, `&gt;`), analog word adresleme (`%IW64`, `%QW1000`) ve IEC zamanlayıcı standartlarına önceden tam uyumlu şekilde hazırlanır.
+   - Paket; kültür (`en-US`), komut ismi (`NORM_X` için `Normalize`, `SCALE_X` için `Scale_X`), XML karakter kaçışları (`&lt;`, `&gt;`), analog word adresleme (`%IW64`, `%QW1000`), TON `ET` pini `OpenCon` bağlantısı, normalize oran değişkenlerinin (`*_Norm`) **kesinlikle `Real`** yapılması (asla `Int` olmamalı, yoksa `SCALE_X`'te aritmetik taşma ve `ENO=False` ile çıkış kaybı yaşanır) ve IEC zamanlayıcı standartlarına önceden tam uyumlu şekilde hazırlanır.
 
 2. **Hata ve Düzeltmeleri Tecrübeye Kaydet:**
    - Paket gönderiminde veya TIA proje derlemesinde herhangi bir hata ile karşılaşıldığında ve bu hata çözüldüğünde; hatanın sebebi, çözümü ve kuralı anında `Ornekler/SimaticML_Ve_Paket_Tecrubeleri.md` dosyasına eklenerek güncellenir ve kalıcı tecrübe olarak saklanır.

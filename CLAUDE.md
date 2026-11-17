@@ -45,6 +45,11 @@ You can execute terminal commands using:
 .\tiagent.ps1 compile
 ```
 
+## Data Type & SimaticML Rules
+- **NORM_X / SCALE_X Data Types**: Normalized ratio variables (`*_Norm`) **MUST STRICTLY BE REAL** (`0.0 .. 1.0`), never `Int`. Feeding integer percentages (>1) to `SCALE_X` causes 16-bit integer overflow (>32767), setting `ENO=False` and dropping PWM/analog outputs.
+- **TON Timer Pins**: Unconnected `ET` pins must be wired with `<OpenCon />`.
+- **Binary Arithmetic**: Parts like `Sub` must not contain `<TemplateValue Name="Card">`.
+
 ## İsimlendirme Kuralı (Kesin Yasak)
 - Projede hiçbir şekilde hiçbir yerde eski isim ("Online" ve "Ladder" kelimeleri yan yana) GEÇMEYECEKTİR.
 - Kullanıcıya verilen yanıtlarda, bilgilendirme mesajlarında, arayüz metinlerinde, loglarda, komut başlıklarında (toolSummary), kodlarda, dosyalarda veya açıklamalarda bu ifade KESİNLİKLE KULLANILMAZ.

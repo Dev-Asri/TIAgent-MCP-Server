@@ -124,13 +124,73 @@ Analog giriş/çıkış veya tamsayı (`Int`, `Word`) tagları `%I0.0` gibi bir 
 
 ---
 
-## 6. Paket Hazırlama Kontrol Listesi (Pre-Flight Checklist)
+## 6. NORM_X, SCALE_X ve Analog / PWM Dönüşümlerinde Veri Tipi Kuralları (Real vs Int)
+
+### Karşılaşılan Hata / Problem:
+```text
+NORM_X / SCALE_X devresinde 0-49 arası değer verildiğinde PLC'den veya PWM çıkışından (%QW...) sinyal alınamıyor / çıkış gelmiyor.
+```
+
+### Kök Neden (Değişken Tipi ve Aritmetik Taşma):
+1. **Normalize Değişkeni KESİNLİKLE `Real` Olmalıdır:**
+   - `NORM_X` (`Normalize`) bloğu `(VALUE - MIN) / (MAX - MIN)` formülüyle `0.0` ile `1.0` arasında bir oran üretir.
+   - Bu ara değişken (`*_Norm`) yanlışlıkla `Int` olarak tanımlanırsa:
+     - Değer ya `0` ve `1` tamsayısına yuvarlanarak tüm hassasiyetini kaybeder,
+     - Ya da kullanıcı/kod bu değişkene doğrudan `49` gibi bir yüzde veya tamsayı değeri yazarsa felaket oluşur!
+2. **SCALE_X Taşma (Overflow) ve ENO=False Hatası:**
+   - `SCALE_X` (`Scale_X`) bloğu `MIN + VALUE * (MAX - MIN)` formülüyle çalışır. Girişin `0.0 .. 1.0` aralığında olduğunu varsayar.
+   - Eğer girişe (`*_Norm`) doğrudan `49` verilirse:
+     $$\text{Çıkış} = 0 + 49 \times 27648 = 1.354.752$$
+   - 16-bit işaretli tamsayı (`Int`) sınırları $-32768$ ile $+32767$ arasındadır.
+   - $1.354.752 > 32767$ olduğundan Siemens PLC'de anında **aritmetik taşma (Overflow)** gerçekleşir, `SCALE_X` bloğunun `ENO` (Enable Out) bayrağı `False`'a düşer ve `%QW1000` çıkışına hiçbir değer aktarılmaz!
+
+### Çözüm & Standart Kural:
+1. **Ara Değişken Tipleri:**
+   - Normalize oran değişkenleri (`*_Norm`) **kesinlikle `Real`** veri tipinde olmalıdır (`0.0 .. 1.0`).
+   - Yüzde veya skaler giriş değişkenleri (`*_Yuzde`) **`Real`** (`0.0 .. 100.0`) veya `Int` olmalıdır.
+   - Fiziksel analog/PWM çıkış tagları (`%QW...`) **`Int`** (`0 .. 27648`) olmalıdır.
+2. **Doğru Mimari:**
+   ```text
+   [DC_Motor_Hiz_Yuzde] (0.0..100.0 Real) 
+       ---> NORM_X (0.0 .. 100.0) 
+       ---> [DC_Motor_Hiz_Norm] (0.0 .. 1.0 REAL - ZORUNLU) 
+       ---> SCALE_X (0 .. 27648) 
+       ---> [QW_DC_Motor_PWM] (0 .. 27648 INT)
+   ```
+
+---
+
+## 7. SimaticML LAD Pin ve Bağlantı (Wire) Kuralları
+
+### 1. TON Zamanlayıcılarında `ET` Pini:
+- Bir `TON` zamanlayıcısının `ET` (Elapsed Time) pinine bir değişken bağlanmıyorsa, pin açıkta bırakılamaz. Mutlaka bir `<OpenCon>` ile sonlandırılmalıdır:
+  ```xml
+  <Wire UId="...">
+    <NameCon UId="$uTon" Name="ET" />
+    <OpenCon UId="..." />
+  </Wire>
+  ```
+- Aksi halde TIA Portal `The connection with the name 'ET' is not connected` hatası verir.
+
+### 2. Çıkarma (`Sub`) Komutunda Şablon Kısıtlaması:
+- Toplama (`Add`) veya Veya (`O`) komutları çoklu girişi desteklediği için `<TemplateValue Name="Card">` alabilir; ancak Çıkarma (`Sub`) matematiksel olarak kesinlikle 2 girişlidir.
+- `Sub` komutuna `<TemplateValue Name="Card">` eklenirse XML import hatası oluşur. Yalnızca `<TemplateValue Name="SrcType" Type="Type">Real</TemplateValue>` tanımlanmalıdır.
+
+### 3. Tekil Access ve Wire Kuralı:
+- Her `<Access>` düğümü tek bir `<IdentCon>` tarafından referans alınmalıdır.
+- Çıkış pinleri (`out`, `eno`) birden fazla telde ayrı ayrı kullanılamaz; dallanma gerekiyorsa aynı tel içinde veya ara değişken kullanılarak bağlanmalıdır.
+
+---
+
+## 8. Paket Hazırlama Kontrol Listesi (Pre-Flight Checklist)
 
 Yeni bir paket oluştururken veya gönderirken şu adımları sırayla doğrula:
 
 - [ ] **Kültür:** Tüm `<Culture>` etiketleri `en-US` mi?
 - [ ] **Komut İsimleri:** `NORM_X` için `Normalize`, `SCALE_X` için `Scale_X` kullanıldı mı?
+- [ ] **Veri Tipleri:** Normalize oran değişkenleri (`*_Norm`) **kesinlikle `Real`** yapıldı mı?
 - [ ] **Karakter Kaçışı:** Başlık ve açıklamalardaki `<`, `>`, `&` karakterleri escape edildi mi?
 - [ ] **Tag Adresleri:** Analog giriş/çıkışlar `%IW...` ve `%QW...` şeklinde Word olarak verildi mi?
 - [ ] **DB Değişkenleri:** Timer değişkenleri `IEC_TIMER`, süreler `Time`, analog değerler `Real` veya `Int` mi?
+- [ ] **TON ET Pini:** Boşta kalan `ET` pinleri `<OpenCon>` ile kapatıldı mı?
 - [ ] **OB1 Wires:** Her `<Part>` giriş/çıkışı geçerli bir `<Wire>` ve `<IdentCon>` / `<NameCon>` ile bağlı mı?
