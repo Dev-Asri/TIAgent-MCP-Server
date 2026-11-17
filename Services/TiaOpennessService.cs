@@ -2922,6 +2922,9 @@ namespace TIAgent.Services
             if (pkg == null)
                 throw new ArgumentNullException(nameof(pkg), "Aktarılacak paket boş.");
 
+            // Ornekler klasöründeki eğitim ve derleme kurallarına göre paketi doğrula ve gerekirse otomatik düzelt
+            PackageValidator.ValidateAndSanitize(pkg, stepCallback);
+
             string localSummary = "";
             bool ok = RunOnOpennessThreadAsync(() =>
             {

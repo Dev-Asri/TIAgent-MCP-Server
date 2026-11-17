@@ -1,0 +1,42 @@
+{
+  "Version": "1.0.0",
+  "Description": "TIAgent SimaticML & PLC Paket Doğrulama Kuralları (Ornekler)",
+  "Rules": {
+    "NormalizedVariables": {
+      "NamePattern": ".*Norm.*",
+      "RequiredDataType": "Real",
+      "AllowedDataTypes": ["Real", "LReal"],
+      "DisallowedDataTypes": ["Int", "DInt", "Word", "SInt", "Byte", "UInt", "UDInt"],
+      "Action": "AutoCorrect",
+      "DefaultStartValue": "0.0",
+      "Reason": "Normalized oran değişkenleri (0.0 .. 1.0) Real olmalıdır. Int olması durumunda SCALE_X aritmetik taşmaya (>32767) uğrar ve ENO=False vererek çıkış kesilir."
+    },
+    "SimaticMlCulture": {
+      "TargetCulture": "en-US",
+      "DisallowedCultures": ["tr-TR", "de-DE", "fr-FR"],
+      "Action": "AutoCorrect",
+      "Reason": "TIA Portal projelerinde tr-TR dili tanımlı değilse Openness import hatası oluşur."
+    },
+    "InstructionNameAliases": [
+      { "Invalid": "NORM_X", "Replacement": "Normalize" },
+      { "Invalid": "Norm_X", "Replacement": "Normalize" },
+      { "Invalid": "SCALE_X", "Replacement": "Scale_X" },
+      { "Invalid": "Scale", "Replacement": "Scale_X" }
+    ],
+    "TonTimerEtPin": {
+      "Action": "AutoCloseWithOpenCon",
+      "Reason": "TON zamanlayıcılarında ET pini boş bırakılamaz, OpenCon ile kapatılmalıdır."
+    },
+    "SubInstruction": {
+      "DisallowedAttributes": ["Card"],
+      "Action": "RemoveAttribute",
+      "Reason": "Çıkarma (Sub) komutu yalnızca iki işlenenlidir, Card şablon özniteliği alamaz."
+    },
+    "AnalogTagAddresses": {
+      "AnalogTypes": ["Int", "Word"],
+      "InvalidAddressPrefix": "%I0.",
+      "Action": "WarnOrFix",
+      "Reason": "Analog/Word taglar bit adresi (%I0.0) alamaz, %IW... olmalıdır."
+    }
+  }
+}

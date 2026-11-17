@@ -988,6 +988,10 @@ namespace TIAgent
         public async Task<bool> QueuePackageForApprovalOrAutoImportAsync(TiaPackage pkg, bool? forceAutoApprove = null)
         {
             if (pkg == null) return false;
+
+            // Ornekler eğitim ve derleme kurallarına göre paketi doğrula ve gerekirse düzelt
+            PackageValidator.ValidateAndSanitize(pkg, (cat, msg, sOk) => AddStep(cat, msg, sOk));
+
             if (forceAutoApprove.HasValue) pkg.AutoApprove = forceAutoApprove.Value;
 
             _pendingPackage = pkg;
