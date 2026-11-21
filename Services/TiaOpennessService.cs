@@ -536,11 +536,17 @@ namespace TIAgent.Services
             return RunOnOpennessThreadAsync(() =>
             {
                 var localPlcs = new List<TiaPlcItem>();
+                _log($"Proje '{project.Name}' donanım cihazları taranıyor...");
                 var allDevices = CollectAllDevicesInProject(project.RawProjectObject);
+                _log($"  → Projede {allDevices.Count} adet cihaz/istasyon tespit edildi. PLC ve CPU modülleri inceleniyor...");
 
+                int devIdx = 0;
                 foreach (var dev in allDevices)
                 {
+                    devIdx++;
                     string devName = GetPropString(dev, "Name");
+                    _log($"  [{devIdx}/{allDevices.Count}] Cihaz inceleniyor: {devName}...");
+
                     var allDevItems = CollectAllDeviceItemsRecursive(dev);
 
                     foreach (var di in allDevItems)
@@ -557,11 +563,14 @@ namespace TIAgent.Services
                             if (string.IsNullOrWhiteSpace(plcName))
                                 plcName = devName;
 
+                            string typeId = GetPropString(di, "TypeIdentifier");
+                            _log($"    [✓ PLC Bulundu] {plcName} (Tip: {typeId})");
+
                             localPlcs.Add(new TiaPlcItem
                             {
                                 Name = plcName,
                                 DeviceName = devName,
-                                TypeName = GetPropString(di, "TypeIdentifier"),
+                                TypeName = typeId,
                                 RawDevice = dev,
                                 RawPlcSoftware = sw
                             });
@@ -569,7 +578,7 @@ namespace TIAgent.Services
                     }
                 }
 
-                _log($"Proje '{project.Name}': {localPlcs.Count} adet PLC istasyonu bulundu.");
+                _log($"[✓ Tarama Bitti] Toplam {localPlcs.Count} adet PLC istasyonu hazırlandı.");
                 return localPlcs;
             }).GetAwaiter().GetResult();
         }
@@ -1384,6 +1393,278 @@ namespace TIAgent.Services
             sb.AppendLine("  </SW.Blocks.GlobalDB>");
             sb.AppendLine("</Document>");
             return sb.ToString();
+        }
+
+        public string BuildGlobalDbSimaticMlXml(
+            string dbName,
+            IEnumerable<PlcDbMemberEntry> members,
+            string memoryLayout = "Optimized",
+            int? blockNumber = null,
+            string tiaVersion = "V20")
+        {
+            string ver = string.IsNullOrWhiteSpace(tiaVersion) ? "V20" : tiaVersion.Trim();
+            if (!ver.StartsWith("V", StringComparison.OrdinalIgnoreCase)) ver = "V" + ver;
+
+            string ifaceVer = "v5";
+            bool includeNamespace = true;
+            if (ver.StartsWith("V14", StringComparison.OrdinalIgnoreCase)) { ifaceVer = "v2"; includeNamespace = false; }
+            else if (ver.StartsWith("V15", StringComparison.OrdinalIgnoreCase)) { ifaceVer = "v3"; includeNamespace = false; }
+            else if (ver.StartsWith("V16", StringComparison.OrdinalIgnoreCase)) { ifaceVer = "v4"; includeNamespace = true; }
+            else if (ver.StartsWith("V17", StringComparison.OrdinalIgnoreCase)) { ifaceVer = "v5"; includeNamespace = true; }
+
+            string layout = string.Equals(memoryLayout, "Standard", StringComparison.OrdinalIgnoreCase) ? "Standard" : "Optimized";
+            string autoNum = blockNumber.HasValue ? "false" : "true";
+
+            var sb = new StringBuilder();
+            sb.AppendLine(@"<?xml version=""1.0"" encoding=""utf-8""?>");
+            sb.AppendLine("<Document>");
+            sb.AppendLine($@"  <Engineering version=""{ver}"" />");
+            sb.AppendLine(@"  <SW.Blocks.GlobalDB ID=""0"">");
+            sb.AppendLine("    <AttributeList>");
+            sb.AppendLine($@"      <AutoNumber>{autoNum}</AutoNumber>");
+            sb.AppendLine("      <HeaderAuthor>TIAgent</HeaderAuthor>");
+            sb.AppendLine("      <HeaderVersion>0.1</HeaderVersion>");
+            sb.AppendLine($@"      <Interface><Sections xmlns=""http://www.siemens.com/automation/Openness/SW/Interface/{ifaceVer}"">");
+            sb.AppendLine(@"  <Section Name=""Static"">");
+            if (members != null)
+            {
+                foreach (var m in members)
+                {
+                    if (string.IsNullOrWhiteSpace(m?.Name)) continue;
+                    string safeName = System.Security.SecurityElement.Escape(m.Name);
+                    string normType = NormalizeDbDatatypeForXml(m.DataType);
+                    string safeType = System.Security.SecurityElement.Escape(normType);
+                    string verAttr = (string.Equals(normType, "IEC_TIMER", StringComparison.OrdinalIgnoreCase) ||
+                                      string.Equals(normType, "TON_TIME", StringComparison.OrdinalIgnoreCase))
+                        ? @" Version=""1.0"""
+                        : "";
+                    string sv = (m.StartValue ?? "").Trim();
+                    if (string.Equals(normType, "Bool", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrEmpty(sv))
+                    {
+                        sv = (sv.Equals("1") || sv.Equals("true", StringComparison.OrdinalIgnoreCase)) ? "true" : "false";
+                    }
+
+                    if (!string.IsNullOrEmpty(sv) &&
+                        !string.Equals(normType, "IEC_TIMER", StringComparison.OrdinalIgnoreCase) &&
+                        !string.Equals(normType, "TON_TIME", StringComparison.OrdinalIgnoreCase))
+                    {
+                        sb.AppendLine($@"    <Member Name=""{safeName}"" Datatype=""{safeType}""{verAttr}>");
+                        sb.AppendLine($@"      <StartValue>{System.Security.SecurityElement.Escape(sv)}</StartValue>");
+                        sb.AppendLine("    </Member>");
+                    }
+                    else
+                    {
+                        sb.AppendLine($@"    <Member Name=""{safeName}"" Datatype=""{safeType}""{verAttr} />");
+                    }
+                }
+            }
+            sb.AppendLine("  </Section>");
+            sb.AppendLine("</Sections></Interface>");
+            sb.AppendLine($@"      <MemoryLayout>{layout}</MemoryLayout>");
+            sb.AppendLine($"      <Name>{System.Security.SecurityElement.Escape(dbName)}</Name>");
+            if (blockNumber.HasValue)
+            {
+                sb.AppendLine($"      <Number>{blockNumber.Value}</Number>");
+            }
+            if (includeNamespace)
+            {
+                sb.AppendLine("      <Namespace />");
+            }
+            sb.AppendLine("      <ProgrammingLanguage>DB</ProgrammingLanguage>");
+            sb.AppendLine("    </AttributeList>");
+            sb.AppendLine("    <ObjectList />");
+            sb.AppendLine("  </SW.Blocks.GlobalDB>");
+            sb.AppendLine("</Document>");
+            return sb.ToString();
+        }
+
+        public void EnsureGlobalDbCreatedOrUpdated(object plcSoftware, PlcDbEntry dbEntry, string tiaVersion = "V20")
+        {
+            if (plcSoftware == null || dbEntry == null || string.IsNullOrWhiteSpace(dbEntry.Name))
+                return;
+
+            string dbName = dbEntry.Name.Trim();
+            _cachedDefinedGlobalSymbols.Add(dbName);
+            if (dbEntry.Members != null)
+            {
+                foreach (var m in dbEntry.Members)
+                {
+                    if (!string.IsNullOrWhiteSpace(m?.Name))
+                    {
+                        _cachedPlcTagTypes[$"{dbName}.{m.Name}"] = m.DataType ?? "Bool";
+                    }
+                }
+            }
+
+            RunOnOpennessThread(() =>
+            {
+                object blockGroup = GetPropValue(plcSoftware, "BlockGroup");
+                if (blockGroup == null) throw new InvalidOperationException("PLC BlockGroup bulunamadı.");
+                object blocksComp = GetPropValue(blockGroup, "Blocks");
+                if (blocksComp == null) throw new InvalidOperationException("PLC BlockGroup.Blocks koleksiyonu bulunamadı.");
+
+                IndexDbBlocksRecursive(blockGroup);
+                Type importOptionsType = FindEngineeringType("Siemens.Engineering.ImportOptions");
+                MethodInfo importMethod = blocksComp.GetType().GetMethod("Import", new[] { typeof(FileInfo), importOptionsType });
+                object optOverride = importOptionsType != null ? Enum.Parse(importOptionsType, "Override") : null;
+
+                void CompileDbInternal()
+                {
+                    IndexDbBlocksRecursive(blockGroup);
+                    try
+                    {
+                        if (!_cachedDbBlocks.TryGetValue(dbName, out object dbObj) || dbObj == null)
+                        {
+                            MethodInfo findMethod = blocksComp.GetType().GetMethod("Find", new[] { typeof(string) });
+                            dbObj = findMethod?.Invoke(blocksComp, new object[] { dbName });
+                        }
+                        if (dbObj != null)
+                        {
+                            CompileBlock(dbObj, out _);
+                        }
+                    }
+                    catch { }
+                }
+
+                // 1. Doğrudan SimaticML XML verilmişse doğrudan aktar
+                if (!string.IsNullOrWhiteSpace(dbEntry.SimaticMlXml) && importMethod != null)
+                {
+                    string adjustedXml = Regex.Replace(
+                        dbEntry.SimaticMlXml,
+                        @"<Engineering\s+version=""[^""]+""\s*/>",
+                        $"<Engineering version=\"{tiaVersion}\" />");
+
+                    string tempXml = Path.Combine(Path.GetTempPath(), $"GlobalDb_{dbName}_{Guid.NewGuid():N}.xml");
+                    try
+                    {
+                        File.WriteAllText(tempXml, adjustedXml, Encoding.UTF8);
+                        InvokeBlocksImport(importMethod, blocksComp, tempXml, optOverride);
+                        _log($"'{dbName}' Global DB doğrudan XML ile içe aktarıldı.");
+                        CompileDbInternal();
+                        return;
+                    }
+                    finally
+                    {
+                        if (File.Exists(tempXml)) { try { File.Delete(tempXml); } catch { } }
+                    }
+                }
+
+                // 2. Eğer DB zaten varsa, export edip eksik member'ları ekleyip re-import et
+                if (_cachedDbBlocks.TryGetValue(dbName, out object existingDb) && existingDb != null)
+                {
+                    string tempExport = Path.Combine(Path.GetTempPath(), $"GlobalDb_Export_{Guid.NewGuid():N}.xml");
+                    try
+                    {
+                        ExportBlockToXml(existingDb, tempExport);
+                        if (File.Exists(tempExport))
+                        {
+                            var xdoc = XDocument.Load(tempExport);
+                            var staticSection = xdoc.Descendants()
+                                .FirstOrDefault(e => e.Name.LocalName == "Section" &&
+                                                     string.Equals(e.Attribute("Name")?.Value, "Static", StringComparison.OrdinalIgnoreCase));
+
+                            if (staticSection != null)
+                            {
+                                XNamespace ns = staticSection.Name.Namespace;
+                                int addedCount = 0;
+
+                                if (dbEntry.Members != null)
+                                {
+                                    foreach (var m in dbEntry.Members)
+                                    {
+                                        if (string.IsNullOrWhiteSpace(m?.Name)) continue;
+                                        bool exists = staticSection.Elements()
+                                            .Any(el => el.Name.LocalName == "Member" &&
+                                                       string.Equals(el.Attribute("Name")?.Value, m.Name, StringComparison.OrdinalIgnoreCase));
+
+                                        if (!exists)
+                                        {
+                                            string normType = NormalizeDbDatatypeForXml(m.DataType);
+                                            var memElem = new XElement(ns + "Member",
+                                                new XAttribute("Name", m.Name),
+                                                new XAttribute("Datatype", normType));
+                                            if (string.Equals(normType, "IEC_TIMER", StringComparison.OrdinalIgnoreCase) ||
+                                                string.Equals(normType, "TON_TIME", StringComparison.OrdinalIgnoreCase))
+                                            {
+                                                memElem.Add(new XAttribute("Version", "1.0"));
+                                            }
+
+                                            string sv = (m.StartValue ?? "").Trim();
+                                            if (string.Equals(normType, "Bool", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrEmpty(sv))
+                                            {
+                                                sv = (sv.Equals("1") || sv.Equals("true", StringComparison.OrdinalIgnoreCase)) ? "true" : "false";
+                                            }
+
+                                            if (!string.IsNullOrEmpty(sv) &&
+                                                !string.Equals(normType, "IEC_TIMER", StringComparison.OrdinalIgnoreCase) &&
+                                                !string.Equals(normType, "TON_TIME", StringComparison.OrdinalIgnoreCase))
+                                            {
+                                                memElem.Add(new XElement(ns + "StartValue", sv));
+                                            }
+
+                                            staticSection.Add(memElem);
+                                            addedCount++;
+                                        }
+                                    }
+                                }
+
+                                if (addedCount > 0 && importMethod != null)
+                                {
+                                    xdoc.Save(tempExport);
+                                    InvokeBlocksImport(importMethod, blocksComp, tempExport, optOverride);
+                                    _log($"'{dbName}' veri bloğu güncellendi ({addedCount} yeni değişken eklendi).");
+                                }
+                                CompileDbInternal();
+                                return;
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        _log($"'{dbName}' güncellenirken uyarı: {ex.Message}");
+                    }
+                    finally
+                    {
+                        if (File.Exists(tempExport)) { try { File.Delete(tempExport); } catch { } }
+                    }
+                }
+
+                // 3. Doğrudan SW.Blocks.GlobalDB SimaticML XML import (bellek düzeni ve StartValue korumalı)
+                if (importMethod != null)
+                {
+                    string tempDirectXml = Path.Combine(Path.GetTempPath(), $"GlobalDb_Direct_{Guid.NewGuid():N}.xml");
+                    try
+                    {
+                        string directXml = BuildGlobalDbSimaticMlXml(dbName, dbEntry.Members, dbEntry.MemoryLayout, dbEntry.BlockNumber, tiaVersion);
+                        File.WriteAllText(tempDirectXml, directXml, Encoding.UTF8);
+                        InvokeBlocksImport(importMethod, blocksComp, tempDirectXml, optOverride);
+                        _log($"'{dbName}' Global DB oluşturuldu ({dbEntry.Members?.Count ?? 0} değişken, Düzen: {dbEntry.MemoryLayout ?? "Optimized"}).");
+                        CompileDbInternal();
+                        return;
+                    }
+                    catch (Exception ex)
+                    {
+                        _log($"Doğrudan XML ile '{dbName}' oluşturulamadı ({ex.Message}), ExternalSource deneniyor...");
+                    }
+                    finally
+                    {
+                        if (File.Exists(tempDirectXml)) { try { File.Delete(tempDirectXml); } catch { } }
+                    }
+                }
+
+                // 4. Fallback ExternalSource
+                var dict = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                if (dbEntry.Members != null)
+                {
+                    foreach (var m in dbEntry.Members)
+                    {
+                        if (!string.IsNullOrWhiteSpace(m?.Name))
+                            dict[m.Name] = m.DataType ?? "Bool";
+                    }
+                }
+                CreateGlobalDbViaExternalSource(plcSoftware, dbName, dict);
+                CompileDbInternal();
+            });
         }
 
         private void CreateGlobalDbViaExternalSource(object plcSoftware, string dbName, Dictionary<string, string> tags)
@@ -2908,6 +3189,72 @@ namespace TIAgent.Services
             return ok;
         }
 
+        private void ImportSingleBlockInternal(
+            PlcBlockEntry blk,
+            TiaPlcItem plc,
+            string tiaVer,
+            object targetBlocksComp,
+            MethodInfo importMethod,
+            object optOverride,
+            Action<string, string, bool> stepCallback,
+            ref BlockInterfaceMember[] lastImportedInterface)
+        {
+            if (blk == null) return;
+
+            if (blk.InterfaceMembers != null && blk.InterfaceMembers.Count > 0)
+            {
+                lastImportedInterface = blk.InterfaceMembers.ToArray();
+            }
+
+            if (string.Equals(blk.Language, "SCL", StringComparison.OrdinalIgnoreCase) &&
+                !string.IsNullOrWhiteSpace(blk.SclCode) &&
+                string.IsNullOrWhiteSpace(blk.SimaticMlXml))
+            {
+                string tempSclFile = Path.Combine(Path.GetTempPath(), $"{blk.Name}_{Guid.NewGuid():N}.scl");
+                try
+                {
+                    File.WriteAllText(tempSclFile, blk.SclCode, new UTF8Encoding(false));
+                    ImportSclBlockFromFile(plc, tempSclFile);
+                    stepCallback?.Invoke("aktarım", $"{blk.BlockType} bloğu (SCL) aktarıldı: {blk.Name}", true);
+                }
+                finally
+                {
+                    if (File.Exists(tempSclFile)) { try { File.Delete(tempSclFile); } catch { } }
+                }
+            }
+            else if (!string.IsNullOrWhiteSpace(blk.SimaticMlXml) && importMethod != null)
+            {
+                string adjustedXml = Regex.Replace(
+                    blk.SimaticMlXml,
+                    @"<Engineering\s+version=""[^""]+""\s*/>",
+                    $"<Engineering version=\"{tiaVer}\" />");
+
+                string tempXml = Path.Combine(Path.GetTempPath(), $"PkgBlock_{blk.Name}_{Guid.NewGuid():N}.xml");
+                try
+                {
+                    File.WriteAllText(tempXml, adjustedXml, Encoding.UTF8);
+                    InvokeBlocksImport(importMethod, targetBlocksComp, tempXml, optOverride);
+                    stepCallback?.Invoke("aktarım", $"{blk.BlockType} bloğu ({blk.Language}) aktarıldı: {blk.Name}", true);
+                }
+                finally
+                {
+                    if (File.Exists(tempXml)) { try { File.Delete(tempXml); } catch { } }
+                }
+            }
+
+            // Derle
+            try
+            {
+                MethodInfo findBlk = targetBlocksComp.GetType().GetMethod("Find", new[] { typeof(string) });
+                object importedBlkObj = findBlk?.Invoke(targetBlocksComp, new object[] { blk.Name });
+                if (importedBlkObj != null)
+                {
+                    CompileBlock(importedBlkObj, out _);
+                }
+            }
+            catch { }
+        }
+
         public bool ImportFullPackage(
             TiaPlcItem plc,
             TiaPackage pkg,
@@ -2925,190 +3272,311 @@ namespace TIAgent.Services
             // Ornekler klasöründeki eğitim ve derleme kurallarına göre paketi doğrula ve gerekirse otomatik düzelt
             PackageValidator.ValidateAndSanitize(pkg, stepCallback);
 
-            string localSummary = "";
-            bool ok = RunOnOpennessThreadAsync(() =>
+            string tiaVer = _lockedVersion?.VersionKey ?? "V20";
+
+            // 1. Yedekleme
+            string currentBackupDir = null;
+            if (!string.IsNullOrWhiteSpace(backupRootDir))
             {
-                string tiaVer = _lockedVersion?.VersionKey ?? "V20";
-                var converter = new SclToLadConverter();
+                currentBackupDir = BackupExistingItemsBeforeImport(plc, pkg, backupRootDir);
+            }
 
-                // 1. Backup existing blocks BEFORE modifying any DBs (so Main [OB1] is exported while still consistent)
-                string currentBackupDir = null;
-                if (!string.IsNullOrWhiteSpace(backupRootDir))
-                {
-                    currentBackupDir = BackupExistingItemsBeforeImport(plc, pkg, backupRootDir);
-                }
+            // ── Çok Aşamalı / Büyük Paket Analizi ──
+            bool hasStage1 = pkg.HasHardwareContent() || (pkg.Tags != null && pkg.Tags.Count > 0);
+            bool hasStage2 = (pkg.DataBlocks != null && pkg.DataBlocks.Any(d => !string.Equals(d.DbType, "InstanceDB", StringComparison.OrdinalIgnoreCase))) ||
+                             (pkg.Blocks != null && pkg.Blocks.Any(b => string.Equals(b.BlockType, "DB", StringComparison.OrdinalIgnoreCase) || string.Equals(b.Language, "DB", StringComparison.OrdinalIgnoreCase)));
+            bool hasStage3 = (pkg.Blocks != null && pkg.Blocks.Any(b => !string.Equals(b.BlockType, "DB", StringComparison.OrdinalIgnoreCase) && !string.Equals(b.Language, "DB", StringComparison.OrdinalIgnoreCase))) ||
+                             (pkg.DataBlocks != null && pkg.DataBlocks.Any(d => string.Equals(d.DbType, "InstanceDB", StringComparison.OrdinalIgnoreCase)));
 
-                // 1b. Hardware (Devices & Networks) + Technology Objects – must exist before blocks reference them
-                if (pkg.HasHardwareContent())
+            int activeStageCount = (hasStage1 ? 1 : 0) + (hasStage2 ? 1 : 0) + (hasStage3 ? 1 : 0);
+            bool isMultiStage = activeStageCount > 1 || pkg.IsLargePackage();
+
+            if (isMultiStage)
+            {
+                stepCallback?.Invoke("aşama", $"Büyük paket tespit edildi: TIA Portal kararlılığı için 3 aşamalı güvenli aktarım devrede ({pkg.PackageName})", true);
+            }
+
+            // ─────────────────────────────────────────────────────────────
+            // AŞAMA 1: Donanım ve I/O Tagları (Hardware & Tag Tables / Tags)
+            // ─────────────────────────────────────────────────────────────
+            if (hasStage1)
+            {
+                stepCallback?.Invoke("aşama 1", $"Aşama 1 başlatıldı: Donanım ve I/O Tagları ({pkg.HardwareDevices?.Count ?? 0} cihaz, {pkg.Tags?.Count ?? 0} tag)...", true);
+
+                bool stage1Ok = RunOnOpennessThreadAsync(() =>
                 {
-                    bool hwOk = ApplyHardwareAndTechnologyInternal(plc, pkg, stepCallback, out string hwErr);
-                    if (!hwOk)
+                    // 1a. Donanım ve Teknoloji Nesneleri
+                    if (pkg.HasHardwareContent())
                     {
-                        localSummary = hwErr;
-                        stepCallback?.Invoke("donanım", $"Donanım işlemi hatayla sonuçlandı: {hwErr}", false);
-                        return false;
-                    }
-                }
-
-                // 2. Create PLC Tag Table & Tags
-                if (pkg.Tags != null && pkg.Tags.Count > 0)
-                {
-                    int addedTags = EnsurePlcTagsCreatedInternal(plc.RawPlcSoftware, pkg.TagTableName, pkg.Tags, tiaVer);
-                    stepCallback?.Invoke("aktarım", $"PLC Tag tablosu güncellendi ({pkg.TagTableName}: {pkg.Tags.Count} tag hazır, {addedTags} yeni eklendi)", true);
-                }
-
-                // 3. Create/Update Global Data Blocks first so symbols resolve inside FB/FC
-                if (pkg.DataBlocks != null)
-                {
-                    foreach (var db in pkg.DataBlocks.Where(d => !string.Equals(d.DbType, "InstanceDB", StringComparison.OrdinalIgnoreCase)))
-                    {
-                        var memberDict = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-                        if (db.Members != null)
+                        bool hwOk = ApplyHardwareAndTechnologyInternal(plc, pkg, stepCallback, out string hwErr);
+                        if (!hwOk)
                         {
-                            foreach (var m in db.Members)
-                            {
-                                if (!string.IsNullOrWhiteSpace(m.Name))
-                                    memberDict[m.Name] = m.DataType ?? "Bool";
-                            }
-                        }
-                        if (memberDict.Count > 0)
-                        {
-                            EnsureLadderDbUpdated(plc.RawPlcSoftware, memberDict, tiaVer, db.Name);
-                            stepCallback?.Invoke("aktarım", $"Global Veri Bloğu hazırlandı ve derlendi: {db.Name} ({memberDict.Count} değişken)", true);
+                            stepCallback?.Invoke("donanım", $"Donanım işlemi hatayla sonuçlandı: {hwErr}", false);
+                            return false;
                         }
                     }
-                }
 
-                // 4. Resolve target folder inside Program blocks
-                object rootGroup = GetPropValue(plc.RawPlcSoftware, "BlockGroup");
-                object rootBlocksComp = GetPropValue(rootGroup, "Blocks");
-
-                string effectiveFolder = !string.IsNullOrWhiteSpace(pkg.TargetFolder) ? pkg.TargetFolder.Trim() : (uiFolderOverride ?? "").Trim();
-                object targetGroup = EnsureBlockSubfolder(plc.RawPlcSoftware, effectiveFolder);
-                object targetBlocksComp = GetPropValue(targetGroup, "Blocks");
-                if (targetBlocksComp == null)
-                    throw new InvalidOperationException("Hedef klasörün Blocks koleksiyonuna ulaşılamadı.");
-
-                Type importOptionsType = FindEngineeringType("Siemens.Engineering.ImportOptions");
-                MethodInfo importMethod = targetBlocksComp.GetType().GetMethod("Import", new[] { typeof(FileInfo), importOptionsType });
-                MethodInfo rootImportMethod = rootBlocksComp?.GetType().GetMethod("Import", new[] { typeof(FileInfo), importOptionsType }) ?? importMethod;
-                object optOverride = importOptionsType != null ? Enum.Parse(importOptionsType, "Override") : null;
-
-                // 5. Import Program Blocks (FB / FC / Main OB1)
-                BlockInterfaceMember[] lastImportedInterface = null;
-                if (pkg.Blocks != null)
-                {
-                    foreach (var blk in pkg.Blocks.Where(b => !b.IsMainObCall))
+                    // 1b. PLC Tag Tablosu ve Taglar
+                    if (pkg.Tags != null && pkg.Tags.Count > 0)
                     {
-                        if (blk.InterfaceMembers != null && blk.InterfaceMembers.Count > 0)
-                        {
-                            lastImportedInterface = blk.InterfaceMembers.ToArray();
-                        }
+                        int addedTags = EnsurePlcTagsCreatedInternal(plc.RawPlcSoftware, pkg.TagTableName, pkg.Tags, tiaVer);
+                        stepCallback?.Invoke("aktarım", $"PLC Tag tablosu güncellendi ({pkg.TagTableName}: {pkg.Tags.Count} tag hazır, {addedTags} yeni eklendi)", true);
+                    }
 
-                        bool isMainOb = string.Equals(blk.BlockType, "OB", StringComparison.OrdinalIgnoreCase) ||
-                                        string.Equals(blk.Name, "Main", StringComparison.OrdinalIgnoreCase);
-
-                        if (isMainOb && !string.IsNullOrWhiteSpace(blk.SimaticMlXml))
-                        {
-                            int mergedTotal = MergeOrImportMainObXml(
-                                rootBlocksComp ?? targetBlocksComp,
-                                rootImportMethod,
-                                optOverride,
-                                blk,
-                                tiaVer,
-                                currentBackupDir,
-                                backupRootDir,
-                                plc.RawPlcSoftware,
-                                pkg.TagTableName,
-                                pkg.Tags);
-                            int incomingCuCount = (blk.Networks != null && blk.Networks.Count > 0)
-                                ? blk.Networks.Count
-                                : Regex.Matches(blk.SimaticMlXml, @"<SW\.Blocks\.CompileUnit\b").Count;
-                            if (incomingCuCount <= 0) incomingCuCount = 1;
-                            stepCallback?.Invoke("aktarım", $"Main [OB1] güncellendi ({incomingCuCount} network eklendi/değiştirildi, toplam {mergedTotal} network korundu)", true);
-                        }
-                        else if (string.Equals(blk.Language, "SCL", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(blk.SclCode) && string.IsNullOrWhiteSpace(blk.SimaticMlXml))
-                        {
-                            string tempSclFile = Path.Combine(Path.GetTempPath(), $"{blk.Name}_{Guid.NewGuid():N}.scl");
-                            try
-                            {
-                                File.WriteAllText(tempSclFile, blk.SclCode, new UTF8Encoding(false));
-                                ImportSclBlockFromFile(plc, tempSclFile);
-                                stepCallback?.Invoke("aktarım", $"{blk.BlockType} bloğu (SCL) aktarıldı: {blk.Name}", true);
-                            }
-                            finally
-                            {
-                                if (File.Exists(tempSclFile)) { try { File.Delete(tempSclFile); } catch { } }
-                            }
-                        }
-                        else if (!string.IsNullOrWhiteSpace(blk.SimaticMlXml))
-                        {
-                            // Ensure XML <Engineering version="..." /> matches the active TIA Portal version
-                            string adjustedXml = Regex.Replace(
-                                blk.SimaticMlXml,
-                                @"<Engineering\s+version=""[^""]+""\s*/>",
-                                $"<Engineering version=\"{tiaVer}\" />");
-
-                            string tempXml = Path.Combine(Path.GetTempPath(), $"PkgBlock_{blk.Name}_{Guid.NewGuid():N}.xml");
-                            try
-                            {
-                                File.WriteAllText(tempXml, adjustedXml, Encoding.UTF8);
-                                InvokeBlocksImport(importMethod, targetBlocksComp, tempXml, optOverride);
-                                stepCallback?.Invoke("aktarım", $"{blk.BlockType} bloğu ({blk.Language}) aktarıldı: {blk.Name}", true);
-                            }
-                            finally
-                            {
-                                if (File.Exists(tempXml)) { try { File.Delete(tempXml); } catch { } }
-                            }
-                        }
-
-                        // Compile imported block immediately
+                    // 1c. Donanım derlemesi (CPU device item)
+                    if (pkg.HasHardwareContent())
+                    {
                         try
                         {
-                            object compToSearch = isMainOb ? (rootBlocksComp ?? targetBlocksComp) : targetBlocksComp;
-                            MethodInfo findBlk = compToSearch.GetType().GetMethod("Find", new[] { typeof(string) });
-                            object importedBlkObj = findBlk?.Invoke(compToSearch, new object[] { blk.Name });
-                            if (importedBlkObj != null)
+                            object cpuItem = CollectAllDeviceItemsRecursive(plc.RawDevice).FirstOrDefault(di => GetSoftwareFromDeviceItem(di) != null);
+                            if (cpuItem != null)
                             {
-                                CompileBlock(importedBlkObj, out _);
+                                CompileBlock(cpuItem, out string hwCompMsg);
+                                stepCallback?.Invoke("derleme", $"Aşama 1 donanım derlemesi: {hwCompMsg}", true);
                             }
                         }
                         catch { }
                     }
-                }
 
-                // 6. Create/Update Instance Data Blocks (after their FBs exist and are compiled)
-                if (pkg.DataBlocks != null)
+                    return true;
+                }).GetAwaiter().GetResult();
+
+                if (!stage1Ok)
                 {
-                    foreach (var instDb in pkg.DataBlocks.Where(d => string.Equals(d.DbType, "InstanceDB", StringComparison.OrdinalIgnoreCase)))
-                    {
-                        EnsureInstanceDbCreatedInternal(plc.RawPlcSoftware, instDb, targetGroup, tiaVer);
-                        stepCallback?.Invoke("aktarım", $"Instance DB oluşturuldu ve derlendi: {instDb.Name} ({instDb.InstanceOfFbName})", true);
-                    }
+                    compileSummary = "Aşama 1 (Donanım ve I/O Tagları) başarısız oldu.";
+                    return false;
                 }
 
-                // 7. Update Main [OB1] with call networks if included in package
-                if (pkg.Blocks != null)
+                stepCallback?.Invoke("aşama 1", "Aşama 1 tamamlandı: Donanım ve I/O Tagları başarıyla aktarıldı ve derlendi.", true);
+
+                GC.Collect();
+                GC.WaitForPendingFinalizers();
+                Thread.Sleep(400);
+            }
+
+            // ─────────────────────────────────────────────────────────────
+            // AŞAMA 2: Global Veri Blokları (Global DBs - Standard / Optimized)
+            // ─────────────────────────────────────────────────────────────
+            if (hasStage2)
+            {
+                int dbTotal = (pkg.DataBlocks?.Count(d => !string.Equals(d.DbType, "InstanceDB", StringComparison.OrdinalIgnoreCase)) ?? 0) +
+                              (pkg.Blocks?.Count(b => string.Equals(b.BlockType, "DB", StringComparison.OrdinalIgnoreCase) || string.Equals(b.Language, "DB", StringComparison.OrdinalIgnoreCase)) ?? 0);
+                stepCallback?.Invoke("aşama 2", $"Aşama 2 başlatıldı: {dbTotal} Global Veri Bloğu aktarılıyor ve derleniyor...", true);
+
+                bool stage2Ok = RunOnOpennessThreadAsync(() =>
                 {
-                    foreach (var mainCall in pkg.Blocks.Where(b => b.IsMainObCall))
+                    // 2a. DataBlocks listesindeki Global DB'ler (Standard/Optimized ve StartValue korumalı)
+                    if (pkg.DataBlocks != null)
                     {
-                        var targetBlk = pkg.Blocks.FirstOrDefault(b => !b.IsMainObCall && string.Equals(b.Name, mainCall.CallTargetBlockName, StringComparison.OrdinalIgnoreCase));
-                        var ifaceList = targetBlk?.InterfaceMembers ?? (lastImportedInterface != null ? new List<BlockInterfaceMember>(lastImportedInterface) : new List<BlockInterfaceMember>());
-
-                        EnsureMainObCallUpdatedInternal(plc.RawPlcSoftware, mainCall, ifaceList, tiaVer, converter);
-                        stepCallback?.Invoke("aktarım", $"Main [OB1] içerisine '{mainCall.CallTargetBlockName}' çağrısı eklendi", true);
+                        foreach (var db in pkg.DataBlocks.Where(d => !string.Equals(d.DbType, "InstanceDB", StringComparison.OrdinalIgnoreCase)))
+                        {
+                            EnsureGlobalDbCreatedOrUpdated(plc.RawPlcSoftware, db, tiaVer);
+                            stepCallback?.Invoke("aktarım", $"Global Veri Bloğu hazırlandı ve derlendi: {db.Name} ({db.Members?.Count ?? 0} değişken, Düzen: {db.MemoryLayout ?? "Optimized"})", true);
+                        }
                     }
+
+                    // 2b. Blocks listesinde tanımlanmış doğrudan DB blokları (SimaticML GlobalDB XML)
+                    if (pkg.Blocks != null)
+                    {
+                        object rootGroup = GetPropValue(plc.RawPlcSoftware, "BlockGroup");
+                        object blocksComp = GetPropValue(rootGroup, "Blocks");
+                        Type importOptionsType = FindEngineeringType("Siemens.Engineering.ImportOptions");
+                        MethodInfo importMethod = blocksComp?.GetType().GetMethod("Import", new[] { typeof(FileInfo), importOptionsType });
+                        object optOverride = importOptionsType != null ? Enum.Parse(importOptionsType, "Override") : null;
+
+                        foreach (var dbBlk in pkg.Blocks.Where(b => string.Equals(b.BlockType, "DB", StringComparison.OrdinalIgnoreCase) || string.Equals(b.Language, "DB", StringComparison.OrdinalIgnoreCase)))
+                        {
+                            if (!string.IsNullOrWhiteSpace(dbBlk.SimaticMlXml) && importMethod != null)
+                            {
+                                string adjustedXml = Regex.Replace(
+                                    dbBlk.SimaticMlXml,
+                                    @"<Engineering\s+version=""[^""]+""\s*/>",
+                                    $"<Engineering version=\"{tiaVer}\" />");
+                                string tempXml = Path.Combine(Path.GetTempPath(), $"GlobalDb_{dbBlk.Name}_{Guid.NewGuid():N}.xml");
+                                try
+                                {
+                                    File.WriteAllText(tempXml, adjustedXml, Encoding.UTF8);
+                                    InvokeBlocksImport(importMethod, blocksComp, tempXml, optOverride);
+                                    stepCallback?.Invoke("aktarım", $"Global Veri Bloğu (XML) aktarıldı: {dbBlk.Name}", true);
+                                }
+                                finally
+                                {
+                                    if (File.Exists(tempXml)) { try { File.Delete(tempXml); } catch { } }
+                                }
+
+                                try
+                                {
+                                    MethodInfo findBlk = blocksComp.GetType().GetMethod("Find", new[] { typeof(string) });
+                                    object importedBlkObj = findBlk?.Invoke(blocksComp, new object[] { dbBlk.Name });
+                                    if (importedBlkObj != null)
+                                    {
+                                        CompileBlock(importedBlkObj, out _);
+                                    }
+                                }
+                                catch { }
+                            }
+                        }
+                    }
+
+                    // Global DB sembollerinin PLC genelinde senkronize olması için yazılım derlemesi
+                    CompileBlock(plc.RawPlcSoftware, out string dbCompMsg);
+                    return true;
+                }).GetAwaiter().GetResult();
+
+                if (!stage2Ok)
+                {
+                    compileSummary = "Aşama 2 (Global Veri Blokları) sırasında hata oluştu.";
+                    return false;
                 }
 
-                // 8. Compile entire PLC Software to synchronize all symbols and verify 0 errors
-                bool compiledOk = CompileBlock(plc.RawPlcSoftware, out string compMsg);
-                localSummary = compMsg ?? "Derleme tamamlandı";
-                stepCallback?.Invoke("derleme", $"PLC Yazılım Derlemesi: {localSummary}", compiledOk);
-                return compiledOk;
-            }).GetAwaiter().GetResult();
+                stepCallback?.Invoke("aşama 2", "Aşama 2 tamamlandı: Tüm Global Veri Blokları aktarıldı ve sembol tablosu senkronize edildi.", true);
+
+                GC.Collect();
+                GC.WaitForPendingFinalizers();
+                Thread.Sleep(400);
+            }
+
+            // ─────────────────────────────────────────────────────────────
+            // AŞAMA 3: Program Blokları (FBs, Instance DBs, FCs, OBs, Main [OB1])
+            // ─────────────────────────────────────────────────────────────
+            string localSummary = "";
+            bool stage3Ok = true;
+
+            if (hasStage3 || (!hasStage1 && !hasStage2))
+            {
+                int progBlockCount = (pkg.Blocks?.Count(b => !string.Equals(b.BlockType, "DB", StringComparison.OrdinalIgnoreCase) && !string.Equals(b.Language, "DB", StringComparison.OrdinalIgnoreCase)) ?? 0) +
+                                     (pkg.DataBlocks?.Count(d => string.Equals(d.DbType, "InstanceDB", StringComparison.OrdinalIgnoreCase)) ?? 0);
+                stepCallback?.Invoke("aşama 3", $"Aşama 3 başlatıldı: {progBlockCount} Program Bloğu (FB/Instance DB/FC/Main [OB1]) aktarılıyor...", true);
+
+                stage3Ok = RunOnOpennessThreadAsync(() =>
+                {
+                    var converter = new SclToLadConverter();
+
+                    // Hedef klasörü çöz
+                    object rootGroup = GetPropValue(plc.RawPlcSoftware, "BlockGroup");
+                    object rootBlocksComp = GetPropValue(rootGroup, "Blocks");
+
+                    string effectiveFolder = !string.IsNullOrWhiteSpace(pkg.TargetFolder) ? pkg.TargetFolder.Trim() : (uiFolderOverride ?? "").Trim();
+                    object targetGroup = EnsureBlockSubfolder(plc.RawPlcSoftware, effectiveFolder);
+                    object targetBlocksComp = GetPropValue(targetGroup, "Blocks");
+                    if (targetBlocksComp == null)
+                        throw new InvalidOperationException("Hedef klasörün Blocks koleksiyonuna ulaşılamadı.");
+
+                    Type importOptionsType = FindEngineeringType("Siemens.Engineering.ImportOptions");
+                    MethodInfo importMethod = targetBlocksComp.GetType().GetMethod("Import", new[] { typeof(FileInfo), importOptionsType });
+                    MethodInfo rootImportMethod = rootBlocksComp?.GetType().GetMethod("Import", new[] { typeof(FileInfo), importOptionsType }) ?? importMethod;
+                    object optOverride = importOptionsType != null ? Enum.Parse(importOptionsType, "Override") : null;
+
+                    BlockInterfaceMember[] lastImportedInterface = null;
+
+                    // 3a. Önce FB'leri içe aktar (SINA_POS FB284 vb. - Instance DB'lerden ÖNCE yüklenmeli!)
+                    if (pkg.Blocks != null)
+                    {
+                        var fbBlocks = pkg.Blocks.Where(b => !b.IsMainObCall &&
+                            (string.Equals(b.BlockType, "FB", StringComparison.OrdinalIgnoreCase) ||
+                             string.Equals(b.Language, "FB", StringComparison.OrdinalIgnoreCase))).ToList();
+
+                        foreach (var blk in fbBlocks)
+                        {
+                            ImportSingleBlockInternal(blk, plc, tiaVer, targetBlocksComp, importMethod, optOverride, stepCallback, ref lastImportedInterface);
+                        }
+                    }
+
+                    // 3b. Instance DB'leri oluştur (İlgili FB'ler artık mevcut ve derlenmiş durumda!)
+                    if (pkg.DataBlocks != null)
+                    {
+                        foreach (var instDb in pkg.DataBlocks.Where(d => string.Equals(d.DbType, "InstanceDB", StringComparison.OrdinalIgnoreCase)))
+                        {
+                            EnsureInstanceDbCreatedInternal(plc.RawPlcSoftware, instDb, targetGroup, tiaVer);
+                            stepCallback?.Invoke("aktarım", $"Instance DB oluşturuldu ve derlendi: {instDb.Name} ({instDb.InstanceOfFbName})", true);
+                        }
+                    }
+
+                    // 3c. FC Bloklarını içe aktar (Artık hem Global DB'leri, hem FB'leri, hem Instance DB'leri tanıyor!)
+                    if (pkg.Blocks != null)
+                    {
+                        var fcBlocks = pkg.Blocks.Where(b => !b.IsMainObCall &&
+                            (string.Equals(b.BlockType, "FC", StringComparison.OrdinalIgnoreCase) ||
+                             string.Equals(b.Language, "FC", StringComparison.OrdinalIgnoreCase))).ToList();
+
+                        foreach (var blk in fcBlocks)
+                        {
+                            ImportSingleBlockInternal(blk, plc, tiaVer, targetBlocksComp, importMethod, optOverride, stepCallback, ref lastImportedInterface);
+                        }
+
+                        // Kalan diğer bloklar (OB dışındakiler)
+                        var otherBlocks = pkg.Blocks.Where(b => !b.IsMainObCall &&
+                            !string.Equals(b.BlockType, "FB", StringComparison.OrdinalIgnoreCase) &&
+                            !string.Equals(b.BlockType, "FC", StringComparison.OrdinalIgnoreCase) &&
+                            !string.Equals(b.BlockType, "OB", StringComparison.OrdinalIgnoreCase) &&
+                            !string.Equals(b.BlockType, "DB", StringComparison.OrdinalIgnoreCase) &&
+                            !string.Equals(b.Language, "DB", StringComparison.OrdinalIgnoreCase) &&
+                            !string.Equals(b.Name, "Main", StringComparison.OrdinalIgnoreCase)).ToList();
+
+                        foreach (var blk in otherBlocks)
+                        {
+                            ImportSingleBlockInternal(blk, plc, tiaVer, targetBlocksComp, importMethod, optOverride, stepCallback, ref lastImportedInterface);
+                        }
+                    }
+
+                    // 3d. Main [OB1] merge veya import
+                    if (pkg.Blocks != null)
+                    {
+                        var mainObBlks = pkg.Blocks.Where(b => !b.IsMainObCall &&
+                            (string.Equals(b.BlockType, "OB", StringComparison.OrdinalIgnoreCase) ||
+                             string.Equals(b.Name, "Main", StringComparison.OrdinalIgnoreCase))).ToList();
+
+                        foreach (var blk in mainObBlks)
+                        {
+                            if (!string.IsNullOrWhiteSpace(blk.SimaticMlXml))
+                            {
+                                int mergedTotal = MergeOrImportMainObXml(
+                                    rootBlocksComp ?? targetBlocksComp,
+                                    rootImportMethod,
+                                    optOverride,
+                                    blk,
+                                    tiaVer,
+                                    currentBackupDir,
+                                    backupRootDir,
+                                    plc.RawPlcSoftware,
+                                    pkg.TagTableName,
+                                    pkg.Tags);
+                                int incomingCuCount = (blk.Networks != null && blk.Networks.Count > 0)
+                                    ? blk.Networks.Count
+                                    : Regex.Matches(blk.SimaticMlXml, @"<SW\.Blocks\.CompileUnit\b").Count;
+                                if (incomingCuCount <= 0) incomingCuCount = 1;
+                                stepCallback?.Invoke("aktarım", $"Main [OB1] güncellendi ({incomingCuCount} network eklendi/değiştirildi, toplam {mergedTotal} network korundu)", true);
+                            }
+                        }
+                    }
+
+                    // 3e. Main OB1 çağrı ağları (Call networks)
+                    if (pkg.Blocks != null)
+                    {
+                        foreach (var mainCall in pkg.Blocks.Where(b => b.IsMainObCall))
+                        {
+                            var targetBlk = pkg.Blocks.FirstOrDefault(b => !b.IsMainObCall && string.Equals(b.Name, mainCall.CallTargetBlockName, StringComparison.OrdinalIgnoreCase));
+                            var ifaceList = targetBlk?.InterfaceMembers ?? (lastImportedInterface != null ? new List<BlockInterfaceMember>(lastImportedInterface) : new List<BlockInterfaceMember>());
+
+                            EnsureMainObCallUpdatedInternal(plc.RawPlcSoftware, mainCall, ifaceList, tiaVer, converter);
+                            stepCallback?.Invoke("aktarım", $"Main [OB1] içerisine '{mainCall.CallTargetBlockName}' çağrısı eklendi", true);
+                        }
+                    }
+
+                    // 3f. Projenin Tamamını Derle (Nihai Senkronizasyon ve Doğrulama)
+                    bool compiledOk = CompileBlock(plc.RawPlcSoftware, out string compMsg);
+                    localSummary = compMsg ?? "Derleme tamamlandı";
+                    stepCallback?.Invoke("derleme", $"PLC Yazılım Derlemesi: {localSummary}", compiledOk);
+                    return compiledOk;
+                }).GetAwaiter().GetResult();
+
+                stepCallback?.Invoke("aşama 3", $"Aşama 3 tamamlandı: Tüm program blokları başarıyla aktarıldı ({localSummary}).", stage3Ok);
+                GC.Collect();
+                GC.WaitForPendingFinalizers();
+            }
 
             compileSummary = localSummary;
-            return ok;
+            return stage3Ok;
         }
 
         private static string GetCompileUnitTitle(XElement cu)

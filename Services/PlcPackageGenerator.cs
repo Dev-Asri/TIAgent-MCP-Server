@@ -466,7 +466,7 @@ namespace TIAgent.Services
             return sb.ToString();
         }
 
-        private static VisualLadderNetwork BuildVisualNetworkFromStatement(int netNum, SclStatementInfo stmt, TiaPackage pkg)
+        public static VisualLadderNetwork BuildVisualNetworkFromStatement(int netNum, SclStatementInfo stmt, TiaPackage pkg)
         {
             var vNet = new VisualLadderNetwork
             {

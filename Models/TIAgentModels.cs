@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.ComponentModel;
+using System.Linq;
 using System.Runtime.CompilerServices;
 
 namespace TIAgent.Models
@@ -250,11 +251,28 @@ namespace TIAgent.Models
         public string Comment { get; set; }
         public List<PlcDbMemberEntry> Members { get; set; } = new List<PlcDbMemberEntry>();
 
+        /// <summary>
+        /// Bellek düzeni: "Optimized" veya "Standard" (Non-Optimized S7-TCP ofset erişimi için).
+        /// </summary>
+        public string MemoryLayout { get; set; } = "Optimized";
+
+        /// <summary>
+        /// Sabit DB numarası (DB1, DB2 vb. - S7-TCP bayt ofset erişimi için).
+        /// </summary>
+        public int? BlockNumber { get; set; }
+
+        /// <summary>
+        /// Doğrudan SimaticML GlobalDB XML içeriği (eğer dışarıdan hazır XML verildiyse).
+        /// </summary>
+        public string SimaticMlXml { get; set; }
+
         public override string ToString()
         {
             if (string.Equals(DbType, "InstanceDB", StringComparison.OrdinalIgnoreCase))
                 return $"{Name} [Instance DB -> {InstanceOfFbName}]";
-            return $"{Name} [Global DB - {Members?.Count ?? 0} Değişken]";
+            string layoutInfo = string.Equals(MemoryLayout, "Standard", StringComparison.OrdinalIgnoreCase) ? " · Standard" : "";
+            string numInfo = BlockNumber.HasValue ? $" · DB{BlockNumber.Value}" : "";
+            return $"{Name} [Global DB - {Members?.Count ?? 0} Değişken{layoutInfo}{numInfo}]";
         }
     }
 
@@ -363,6 +381,128 @@ namespace TIAgent.Models
                    (TechnologyObjectsToDelete?.Count ?? 0) > 0;
         }
 
+        /// <summary>
+        /// Büyük paketlerde TIA Portal'ın crash olmasını önlemek için 3 aşamalı aktarım uygular.
+        /// </summary>
+        public bool AutoStageLargePackage { get; set; } = true;
+
+        /// <summary>
+        /// Paketin büyük / çok aşamalı olup olmadığını tespit eder.
+        /// </summary>
+        public bool IsLargePackage()
+        {
+            int dbCount = DataBlocks?.Count ?? 0;
+            int blkCount = Blocks?.Count ?? 0;
+            bool hasHw = HasHardwareContent();
+            bool hasTags = Tags != null && Tags.Count > 0;
+            bool hasProtectedFb = Blocks != null && Blocks.Any(b =>
+                (!string.IsNullOrEmpty(b.Name) && (b.Name.IndexOf("SINA_POS", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                                   b.Name.IndexOf("FB284", StringComparison.OrdinalIgnoreCase) >= 0)) ||
+                (!string.IsNullOrEmpty(b.SimaticMlXml) && b.SimaticMlXml.IndexOf("KnowHowProtection", StringComparison.OrdinalIgnoreCase) >= 0));
+
+            // Donanım + Program Blokları veya DB'ler birlikteyse büyük pakettir
+            if (hasHw && (dbCount > 0 || blkCount > 0)) return true;
+            // Know-How Korumalı veya ağır FB (SINA_POS vb.) ve bloklar/DB'ler varsa büyük pakettir
+            if (hasProtectedFb && (dbCount > 0 || blkCount > 2)) return true;
+            // Toplam 5 veya daha fazla DB + Blok varsa büyük pakettir
+            if (dbCount + blkCount >= 5) return true;
+            // 3 veya daha fazla DB ve program blokları varsa
+            if (dbCount >= 3 && blkCount >= 2) return true;
+
+            return false;
+        }
+
+        /// <summary>
+        /// Paketi TIA Portal kararlılığı için 3 güvenli aşamaya böler:
+        /// Aşama 1: Donanım ve I/O Tagları
+        /// Aşama 2: Global Veri Blokları (Standard / Optimized DB'ler)
+        /// Aşama 3: Program Blokları (FBs, Instance DBs, FCs, OBs, Main [OB1])
+        /// </summary>
+        public List<TiaPackage> SplitIntoStages()
+        {
+            var stages = new List<TiaPackage>();
+
+            // Aşama 1: Donanım ve I/O Tagları
+            if (this.HasHardwareContent() || (this.Tags != null && this.Tags.Count > 0))
+            {
+                var stage1 = new TiaPackage
+                {
+                    PackageName = $"{this.PackageName}_Stage1_Donanim_Ve_Taglar",
+                    Title = $"Aşama 1: Donanım ve I/O Tagları ({this.Title ?? this.PackageName})",
+                    Description = $"3 aşamalı aktarım – Aşama 1: PROFINET cihazlar, modüller ve {this.Tags?.Count ?? 0} I/O tagı",
+                    Language = this.Language,
+                    TagTableName = this.TagTableName,
+                    Tags = this.Tags != null ? new List<PlcTagEntry>(this.Tags) : new List<PlcTagEntry>(),
+                    HardwareDevices = this.HardwareDevices != null ? new List<HardwareDeviceEntry>(this.HardwareDevices) : new List<HardwareDeviceEntry>(),
+                    PlcModules = this.PlcModules != null ? new List<HardwareModuleEntry>(this.PlcModules) : new List<HardwareModuleEntry>(),
+                    TechnologyObjects = this.TechnologyObjects != null ? new List<TechnologyObjectEntry>(this.TechnologyObjects) : new List<TechnologyObjectEntry>(),
+                    PlcIpAddress = this.PlcIpAddress,
+                    DevicesToDelete = this.DevicesToDelete != null ? new List<string>(this.DevicesToDelete) : null,
+                    TechnologyObjectsToDelete = this.TechnologyObjectsToDelete != null ? new List<string>(this.TechnologyObjectsToDelete) : null,
+                    AutoApprove = this.AutoApprove,
+                    TargetPlcName = this.TargetPlcName,
+                    TargetFolder = this.TargetFolder,
+                    DataBlocks = new List<PlcDbEntry>(),
+                    Blocks = new List<PlcBlockEntry>()
+                };
+                stages.Add(stage1);
+            }
+
+            // Aşama 2: Global Veri Blokları
+            var globalDbs = this.DataBlocks?.Where(d => !string.Equals(d.DbType, "InstanceDB", StringComparison.OrdinalIgnoreCase)).ToList() ?? new List<PlcDbEntry>();
+            var dbBlocks = this.Blocks?.Where(b => string.Equals(b.BlockType, "DB", StringComparison.OrdinalIgnoreCase) || string.Equals(b.Language, "DB", StringComparison.OrdinalIgnoreCase)).ToList() ?? new List<PlcBlockEntry>();
+
+            if (globalDbs.Count > 0 || dbBlocks.Count > 0)
+            {
+                var stage2 = new TiaPackage
+                {
+                    PackageName = $"{this.PackageName}_Stage2_Global_DBler",
+                    Title = $"Aşama 2: Global Veri Blokları ({this.Title ?? this.PackageName})",
+                    Description = $"3 aşamalı aktarım – Aşama 2: {globalDbs.Count + dbBlocks.Count} Global Veri Bloğu (DB)",
+                    Language = this.Language,
+                    TagTableName = this.TagTableName,
+                    Tags = new List<PlcTagEntry>(),
+                    HardwareDevices = new List<HardwareDeviceEntry>(),
+                    PlcModules = new List<HardwareModuleEntry>(),
+                    TechnologyObjects = new List<TechnologyObjectEntry>(),
+                    AutoApprove = this.AutoApprove,
+                    TargetPlcName = this.TargetPlcName,
+                    TargetFolder = this.TargetFolder,
+                    DataBlocks = globalDbs,
+                    Blocks = dbBlocks
+                };
+                stages.Add(stage2);
+            }
+
+            // Aşama 3: Program Blokları (FBs, Instance DBs, FCs, OBs, Main [OB1])
+            var instDbs = this.DataBlocks?.Where(d => string.Equals(d.DbType, "InstanceDB", StringComparison.OrdinalIgnoreCase)).ToList() ?? new List<PlcDbEntry>();
+            var progBlocks = this.Blocks?.Where(b => !string.Equals(b.BlockType, "DB", StringComparison.OrdinalIgnoreCase) && !string.Equals(b.Language, "DB", StringComparison.OrdinalIgnoreCase)).ToList() ?? new List<PlcBlockEntry>();
+
+            if (instDbs.Count > 0 || progBlocks.Count > 0)
+            {
+                var stage3 = new TiaPackage
+                {
+                    PackageName = $"{this.PackageName}_Stage3_Program_Bloklari",
+                    Title = $"Aşama 3: Program Blokları ve Main [OB1] ({this.Title ?? this.PackageName})",
+                    Description = $"3 aşamalı aktarım – Aşama 3: {progBlocks.Count} program bloğu (FB/FC/OB) ve {instDbs.Count} Instance DB",
+                    Language = this.Language,
+                    TagTableName = this.TagTableName,
+                    Tags = new List<PlcTagEntry>(),
+                    HardwareDevices = new List<HardwareDeviceEntry>(),
+                    PlcModules = new List<HardwareModuleEntry>(),
+                    TechnologyObjects = new List<TechnologyObjectEntry>(),
+                    AutoApprove = this.AutoApprove,
+                    TargetPlcName = this.TargetPlcName,
+                    TargetFolder = this.TargetFolder,
+                    DataBlocks = instDbs,
+                    Blocks = progBlocks
+                };
+                stages.Add(stage3);
+            }
+
+            return stages;
+        }
+
         public string GetApprovalSummaryText(string plcName, string uiFolderOverride, string lang = "tr")
         {
             bool isEn = string.Equals(lang, "en", StringComparison.OrdinalIgnoreCase);
@@ -372,6 +512,12 @@ namespace TIAgent.Models
                 : $"{plcName ?? "PLC"} > Program blocks > {effectiveFolder}";
 
             var sb = new System.Text.StringBuilder();
+            if (IsLargePackage())
+            {
+                sb.AppendLine(isEn
+                    ? "⚡ Safe Import: Large package detected. Will be transferred in 3 stages (Hardware/Tags -> Global DBs -> Program Blocks) for TIA Portal stability."
+                    : "⚡ Güvenli Aktarım: Büyük paket tespit edildi. TIA Portal kararlılığı için 3 aşamada (Donanım/Taglar → Global DB'ler → Program Blokları) aktarılacaktır.");
+            }
             if (isEn)
             {
                 sb.AppendLine($"AI Request: {PackageName} ({Language}) — {Title}");

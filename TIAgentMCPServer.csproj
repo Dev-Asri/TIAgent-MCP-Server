@@ -17,6 +17,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Reference Include="Microsoft.CSharp" />
     <Reference Include="System.Net.Http" />
     <Reference Include="System.Runtime.Serialization" />
     <Reference Include="System.Security" />
@@ -29,6 +30,10 @@
     <None Update="Ornekler\**">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+    <Compile Remove="TemplateCreator\**" />
+    <Page Remove="TemplateCreator\**" />
+    <ApplicationDefinition Remove="TemplateCreator\**" />
+    <None Remove="TemplateCreator\**" />
   </ItemGroup>
 
 </Project>

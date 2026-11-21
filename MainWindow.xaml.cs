@@ -1023,6 +1023,10 @@ namespace TIAgent
                 BtnRejectPackage.IsEnabled = false;
                 _approvalCountdownTimer.Stop();
                 TxtCountdown.Text = "";
+                string autoTitle = pkg.IsLargePackage()
+                    ? $"otomatik – Büyük paket 3 aşamada güvenle aktarılıyor: {pkg.PackageName} → {targetDisplay}"
+                    : $"otomatik – Paket aktarılıyor: {pkg.PackageName} → {targetDisplay}";
+                TxtApprovalHeader.Text = autoTitle;
                 SetApprovalStatusProcessing();
                 TxtApprovalDetails.Text = pkg.GetApprovalSummaryText(plcName, effectiveFolder);
                 return await ApproveAndImportPendingPackageAsync();
@@ -1496,9 +1500,28 @@ namespace TIAgent
                         return;
                     }
 
+                    if (action == "split" && req.CustomPackage != null)
+                    {
+                        var stages = req.CustomPackage.SplitIntoStages();
+                        AddStep("AI", $"{sourceChannel} paketi 3 aşamaya bölündü ({req.CustomPackage.PackageName}: {stages.Count} aşama)", true);
+                        tcs.TrySetResult(new
+                        {
+                            ok = true,
+                            packageName = req.CustomPackage.PackageName,
+                            stageCount = stages.Count,
+                            stages = stages,
+                            status = BuildBridgeStatusSnapshot()
+                        });
+                        return;
+                    }
+
                     if (action == "package" && req.CustomPackage != null)
                     {
                         AddStep("AI", $"{sourceChannel} özel paketi alındı: {req.CustomPackage.PackageName}", true);
+                        if (req.CustomPackage.IsLargePackage())
+                        {
+                            AddStep("aşama", $"Büyük paket alındı: 3 aşamalı güvenli aktarım uygulanacak ({req.CustomPackage.PackageName})", true);
+                        }
                         bool queued = await QueuePackageForApprovalOrAutoImportAsync(req.CustomPackage, req.AutoApprove);
                         tcs.TrySetResult(new { ok = queued, packageName = req.CustomPackage.PackageName, status = BuildBridgeStatusSnapshot() });
                         return;

@@ -26,6 +26,7 @@ namespace TIAgent.Services
         public bool? ClearMainNetworks { get; set; }
         public System.Collections.Generic.List<string> DevicesToDelete { get; set; }
         public System.Collections.Generic.List<string> TechnologyObjectsToDelete { get; set; }
+        public bool? UseStages { get; set; }
         public string SourceChannel { get; set; }
     }
 
@@ -463,6 +464,7 @@ namespace TIAgent.Services
                         else if (path.Contains("/project") || path.Contains("/dbs") || path.Contains("/refresh")) cmd.Action = "project";
                         else if (path.Contains("/package")) cmd.Action = "package";
                         else if (path.Contains("/hardware")) cmd.Action = "hardware";
+                        else if (path.Contains("/split") || path.Contains("/stages")) cmd.Action = "split";
                         else if (path.Contains("/gsd")) cmd.Action = "gsd";
                         else if (string.IsNullOrWhiteSpace(cmd.Action))
                         {

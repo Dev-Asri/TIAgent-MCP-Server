@@ -1401,8 +1401,43 @@ namespace TIAgent.Services
                 string valArg = argDict.TryGetValue("VALUE", out string nVal) ? nVal : (posArgs.Count >= 2 ? posArgs[1] : null);
                 string maxVal = argDict.TryGetValue("MAX", out string nMax) ? nMax : (posArgs.Count >= 3 ? posArgs[2] : null);
 
+                // Cascade check: SCALE_X(MIN := ..., VALUE := NORM_X(...), MAX := ...) (Tek Dalda Cascade NORM_X -> SCALE_X)
+                if (upperFn == "SCALE_X" && IsSimpleOperand(minVal) && IsSimpleOperand(maxVal) && !string.IsNullOrWhiteSpace(valArg))
+                {
+                    string trimmedVal = StripOuterParentheses(valArg).Trim();
+                    if (Regex.IsMatch(trimmedVal, @"^NORM_X\s*\(", RegexOptions.IgnoreCase))
+                    {
+                        if (TryParseFunctionBoxCall("__NORM_TEMP__", trimmedVal, out IfActionItem normAct) && normAct != null && normAct.IsFunctionBox && normAct.FuncPartName == "Normalize")
+                        {
+                            string destType = GetVariableBaseType(targetVar) ?? ResolveNumericSrcType(minVal, maxVal);
+
+                            var scaleAct = new IfActionItem
+                            {
+                                TargetVar = targetVar,
+                                IsFunctionBox = true,
+                                FuncPartName = "Scale_X",
+                                FuncSrcType = "Real",
+                                FuncDestType = destType,
+                                FuncInputPins = new List<Tuple<string, string>>
+                                {
+                                    Tuple.Create("min", minVal.Trim()),
+                                    Tuple.Create("max", maxVal.Trim())
+                                },
+                                FuncOutputPin = "out"
+                            };
+
+                            normAct.IsCascadeBox = true;
+                            normAct.SecondBox = scaleAct;
+                            normAct.TargetVar = targetVar;
+                            actionItem = normAct;
+                            return true;
+                        }
+                    }
+                }
+
                 if (IsSimpleOperand(minVal) && IsSimpleOperand(valArg) && IsSimpleOperand(maxVal))
                 {
+                    // Siemens SimaticML LAD instruction name for NORM_X is "Normalize", for SCALE_X is "Scale_X"
                     string partName = upperFn == "NORM_X" ? "Normalize" : "Scale_X";
                     string srcType;
                     string destType;
@@ -2252,6 +2287,87 @@ namespace TIAgent.Services
                 var parts = new StringBuilder();
                 var wires = new StringBuilder();
 
+                // Cascade Check (Tek Dalda NORM_X -> SCALE_X)
+                if (fnAct.IsCascadeBox && fnAct.SecondBox != null)
+                {
+                    var secAct = fnAct.SecondBox;
+                    var pinAccIds1 = new List<Tuple<string, int>>();
+                    foreach (var pin in fnAct.FuncInputPins)
+                    {
+                        int accId = NextUId();
+                        parts.AppendLine(FormatAccessXml(pin.Item2, accId));
+                        pinAccIds1.Add(Tuple.Create(pin.Item1, accId));
+                    }
+
+                    var pinAccIds2 = new List<Tuple<string, int>>();
+                    foreach (var pin in secAct.FuncInputPins)
+                    {
+                        int accId = NextUId();
+                        parts.AppendLine(FormatAccessXml(pin.Item2, accId));
+                        pinAccIds2.Add(Tuple.Create(pin.Item1, accId));
+                    }
+
+                    int casTargetAccId = NextUId();
+                    parts.AppendLine(FormatAccessXml(secAct.TargetVar, casTargetAccId));
+
+                    int fnPart1Id = NextUId();
+                    parts.AppendLine($"          <Part Name=\"{fnAct.FuncPartName}\" UId=\"{fnPart1Id}\">");
+                    if (fnAct.FuncCardinality > 0)
+                        parts.AppendLine($"            <TemplateValue Name=\"Card\" Type=\"Cardinality\">{fnAct.FuncCardinality}</TemplateValue>");
+                    if (!string.IsNullOrEmpty(fnAct.FuncSrcType))
+                        parts.AppendLine($"            <TemplateValue Name=\"SrcType\" Type=\"Type\">{fnAct.FuncSrcType}</TemplateValue>");
+                    if (!string.IsNullOrEmpty(fnAct.FuncDestType))
+                        parts.AppendLine($"            <TemplateValue Name=\"DestType\" Type=\"Type\">{fnAct.FuncDestType}</TemplateValue>");
+                    parts.AppendLine($"          </Part>");
+
+                    int fnPart2Id = NextUId();
+                    parts.AppendLine($"          <Part Name=\"{secAct.FuncPartName}\" UId=\"{fnPart2Id}\">");
+                    if (secAct.FuncCardinality > 0)
+                        parts.AppendLine($"            <TemplateValue Name=\"Card\" Type=\"Cardinality\">{secAct.FuncCardinality}</TemplateValue>");
+                    if (!string.IsNullOrEmpty(secAct.FuncSrcType))
+                        parts.AppendLine($"            <TemplateValue Name=\"SrcType\" Type=\"Type\">{secAct.FuncSrcType}</TemplateValue>");
+                    if (!string.IsNullOrEmpty(secAct.FuncDestType))
+                        parts.AppendLine($"            <TemplateValue Name=\"DestType\" Type=\"Type\">{secAct.FuncDestType}</TemplateValue>");
+                    parts.AppendLine($"          </Part>");
+
+                    // 1. Powerrail -> Part 1 en
+                    int casEnWireId = NextUId();
+                    wires.AppendLine($"          <Wire UId=\"{casEnWireId}\">");
+                    wires.AppendLine($"            <Powerrail />");
+                    wires.AppendLine($"            <NameCon UId=\"{fnPart1Id}\" Name=\"en\" />");
+                    wires.AppendLine($"          </Wire>");
+
+                    // 2. Part 1 inputs (min, value, max)
+                    foreach (var pa in pinAccIds1)
+                    {
+                        int wId = NextUId();
+                        wires.AppendLine($"          <Wire UId=\"{wId}\"><IdentCon UId=\"{pa.Item2}\" /><NameCon UId=\"{fnPart1Id}\" Name=\"{pa.Item1}\" /></Wire>");
+                    }
+
+                    // 3. Part 1 eno -> Part 2 en (CASCADE!)
+                    int cascadeEnWireId = NextUId();
+                    wires.AppendLine($"          <Wire UId=\"{cascadeEnWireId}\"><NameCon UId=\"{fnPart1Id}\" Name=\"eno\" /><NameCon UId=\"{fnPart2Id}\" Name=\"en\" /></Wire>");
+
+                    // 4. Part 1 out -> Part 2 value (DATA CASCADE!)
+                    int cascadeDataWireId = NextUId();
+                    wires.AppendLine($"          <Wire UId=\"{cascadeDataWireId}\"><NameCon UId=\"{fnPart1Id}\" Name=\"out\" /><NameCon UId=\"{fnPart2Id}\" Name=\"value\" /></Wire>");
+
+                    // 5. Part 2 inputs (min, max)
+                    foreach (var pa in pinAccIds2)
+                    {
+                        int wId = NextUId();
+                        wires.AppendLine($"          <Wire UId=\"{wId}\"><IdentCon UId=\"{pa.Item2}\" /><NameCon UId=\"{fnPart2Id}\" Name=\"{pa.Item1}\" /></Wire>");
+                    }
+
+                    // 6. Part 2 out -> TargetVar
+                    int casOutWireId = NextUId();
+                    string casOutPin = !string.IsNullOrEmpty(secAct.FuncOutputPin) ? secAct.FuncOutputPin : "out";
+                    wires.AppendLine($"          <Wire UId=\"{casOutWireId}\"><IdentCon UId=\"{casTargetAccId}\" /><NameCon UId=\"{fnPart2Id}\" Name=\"{casOutPin}\" /></Wire>");
+
+                    xml = WrapCompileUnit(cuId, "LAD", parts.ToString(), wires.ToString(), $"Network {networkIndex}: {secAct.TargetVar} := {secAct.FuncPartName}(..., {fnAct.FuncPartName}(...))");
+                    return true;
+                }
+
                 var pinAccIds = new List<Tuple<string, int>>();
                 foreach (var pin in fnAct.FuncInputPins)
                 {
@@ -3037,44 +3153,113 @@ namespace TIAgent.Services
                     }
                     else if (act.IsFunctionBox)
                     {
-                        var pinAccIds = new List<Tuple<string, int>>();
-                        foreach (var pin in act.FuncInputPins)
+                        if (act.IsCascadeBox && act.SecondBox != null)
                         {
-                            int accId = NextUId();
-                            parts.AppendLine(FormatAccessXml(pin.Item2, accId));
-                            pinAccIds.Add(Tuple.Create(pin.Item1, accId));
+                            var secAct = act.SecondBox;
+                            var pinAccIds1 = new List<Tuple<string, int>>();
+                            foreach (var pin in act.FuncInputPins)
+                            {
+                                int accId = NextUId();
+                                parts.AppendLine(FormatAccessXml(pin.Item2, accId));
+                                pinAccIds1.Add(Tuple.Create(pin.Item1, accId));
+                            }
+
+                            var pinAccIds2 = new List<Tuple<string, int>>();
+                            foreach (var pin in secAct.FuncInputPins)
+                            {
+                                int accId = NextUId();
+                                parts.AppendLine(FormatAccessXml(pin.Item2, accId));
+                                pinAccIds2.Add(Tuple.Create(pin.Item1, accId));
+                            }
+
+                            int targetAccId = NextUId();
+                            parts.AppendLine(FormatAccessXml(secAct.TargetVar, targetAccId));
+
+                            int fnPart1Id = NextUId();
+                            parts.AppendLine($"          <Part Name=\"{act.FuncPartName}\" UId=\"{fnPart1Id}\">");
+                            if (act.FuncCardinality > 0)
+                                parts.AppendLine($"            <TemplateValue Name=\"Card\" Type=\"Cardinality\">{act.FuncCardinality}</TemplateValue>");
+                            if (!string.IsNullOrEmpty(act.FuncSrcType))
+                                parts.AppendLine($"            <TemplateValue Name=\"SrcType\" Type=\"Type\">{act.FuncSrcType}</TemplateValue>");
+                            if (!string.IsNullOrEmpty(act.FuncDestType))
+                                parts.AppendLine($"            <TemplateValue Name=\"DestType\" Type=\"Type\">{act.FuncDestType}</TemplateValue>");
+                            parts.AppendLine($"          </Part>");
+
+                            int fnPart2Id = NextUId();
+                            parts.AppendLine($"          <Part Name=\"{secAct.FuncPartName}\" UId=\"{fnPart2Id}\">");
+                            if (secAct.FuncCardinality > 0)
+                                parts.AppendLine($"            <TemplateValue Name=\"Card\" Type=\"Cardinality\">{secAct.FuncCardinality}</TemplateValue>");
+                            if (!string.IsNullOrEmpty(secAct.FuncSrcType))
+                                parts.AppendLine($"            <TemplateValue Name=\"SrcType\" Type=\"Type\">{secAct.FuncSrcType}</TemplateValue>");
+                            if (!string.IsNullOrEmpty(secAct.FuncDestType))
+                                parts.AppendLine($"            <TemplateValue Name=\"DestType\" Type=\"Type\">{secAct.FuncDestType}</TemplateValue>");
+                            parts.AppendLine($"          </Part>");
+
+                            wires.AppendLine($"            <NameCon UId=\"{fnPart1Id}\" Name=\"en\" />");
+
+                            foreach (var pa in pinAccIds1)
+                            {
+                                int wId = NextUId();
+                                actionInternalWires.AppendLine($"          <Wire UId=\"{wId}\"><IdentCon UId=\"{pa.Item2}\" /><NameCon UId=\"{fnPart1Id}\" Name=\"{pa.Item1}\" /></Wire>");
+                            }
+
+                            int cascadeEnWireId = NextUId();
+                            actionInternalWires.AppendLine($"          <Wire UId=\"{cascadeEnWireId}\"><NameCon UId=\"{fnPart1Id}\" Name=\"eno\" /><NameCon UId=\"{fnPart2Id}\" Name=\"en\" /></Wire>");
+
+                            int cascadeDataWireId = NextUId();
+                            actionInternalWires.AppendLine($"          <Wire UId=\"{cascadeDataWireId}\"><NameCon UId=\"{fnPart1Id}\" Name=\"out\" /><NameCon UId=\"{fnPart2Id}\" Name=\"value\" /></Wire>");
+
+                            foreach (var pa in pinAccIds2)
+                            {
+                                int wId = NextUId();
+                                actionInternalWires.AppendLine($"          <Wire UId=\"{wId}\"><IdentCon UId=\"{pa.Item2}\" /><NameCon UId=\"{fnPart2Id}\" Name=\"{pa.Item1}\" /></Wire>");
+                            }
+
+                            int outWire = NextUId();
+                            string outPin = !string.IsNullOrEmpty(secAct.FuncOutputPin) ? secAct.FuncOutputPin : "out";
+                            actionInternalWires.AppendLine($"          <Wire UId=\"{outWire}\"><IdentCon UId=\"{targetAccId}\" /><NameCon UId=\"{fnPart2Id}\" Name=\"{outPin}\" /></Wire>");
                         }
-
-                        int targetAccId = NextUId();
-                        parts.AppendLine(FormatAccessXml(act.TargetVar, targetAccId));
-
-                        int fnPartId = NextUId();
-                        parts.AppendLine($"          <Part Name=\"{act.FuncPartName}\" UId=\"{fnPartId}\">");
-                        if (act.FuncCardinality > 0)
+                        else
                         {
-                            parts.AppendLine($"            <TemplateValue Name=\"Card\" Type=\"Cardinality\">{act.FuncCardinality}</TemplateValue>");
-                        }
-                        if (!string.IsNullOrEmpty(act.FuncSrcType))
-                        {
-                            parts.AppendLine($"            <TemplateValue Name=\"SrcType\" Type=\"Type\">{act.FuncSrcType}</TemplateValue>");
-                        }
-                        if (!string.IsNullOrEmpty(act.FuncDestType))
-                        {
-                            parts.AppendLine($"            <TemplateValue Name=\"DestType\" Type=\"Type\">{act.FuncDestType}</TemplateValue>");
-                        }
-                        parts.AppendLine($"          </Part>");
+                            var pinAccIds = new List<Tuple<string, int>>();
+                            foreach (var pin in act.FuncInputPins)
+                            {
+                                int accId = NextUId();
+                                parts.AppendLine(FormatAccessXml(pin.Item2, accId));
+                                pinAccIds.Add(Tuple.Create(pin.Item1, accId));
+                            }
 
-                        wires.AppendLine($"            <NameCon UId=\"{fnPartId}\" Name=\"en\" />");
+                            int targetAccId = NextUId();
+                            parts.AppendLine(FormatAccessXml(act.TargetVar, targetAccId));
 
-                        foreach (var pa in pinAccIds)
-                        {
-                            int wId = NextUId();
-                            actionInternalWires.AppendLine($"          <Wire UId=\"{wId}\"><IdentCon UId=\"{pa.Item2}\" /><NameCon UId=\"{fnPartId}\" Name=\"{pa.Item1}\" /></Wire>");
+                            int fnPartId = NextUId();
+                            parts.AppendLine($"          <Part Name=\"{act.FuncPartName}\" UId=\"{fnPartId}\">");
+                            if (act.FuncCardinality > 0)
+                            {
+                                parts.AppendLine($"            <TemplateValue Name=\"Card\" Type=\"Cardinality\">{act.FuncCardinality}</TemplateValue>");
+                            }
+                            if (!string.IsNullOrEmpty(act.FuncSrcType))
+                            {
+                                parts.AppendLine($"            <TemplateValue Name=\"SrcType\" Type=\"Type\">{act.FuncSrcType}</TemplateValue>");
+                            }
+                            if (!string.IsNullOrEmpty(act.FuncDestType))
+                            {
+                                parts.AppendLine($"            <TemplateValue Name=\"DestType\" Type=\"Type\">{act.FuncDestType}</TemplateValue>");
+                            }
+                            parts.AppendLine($"          </Part>");
+
+                            wires.AppendLine($"            <NameCon UId=\"{fnPartId}\" Name=\"en\" />");
+
+                            foreach (var pa in pinAccIds)
+                            {
+                                int wId = NextUId();
+                                actionInternalWires.AppendLine($"          <Wire UId=\"{wId}\"><IdentCon UId=\"{pa.Item2}\" /><NameCon UId=\"{fnPartId}\" Name=\"{pa.Item1}\" /></Wire>");
+                            }
+
+                            int outWire = NextUId();
+                            string outPin = !string.IsNullOrEmpty(act.FuncOutputPin) ? act.FuncOutputPin : "out";
+                            actionInternalWires.AppendLine($"          <Wire UId=\"{outWire}\"><IdentCon UId=\"{targetAccId}\" /><NameCon UId=\"{fnPartId}\" Name=\"{outPin}\" /></Wire>");
                         }
-
-                        int outWire = NextUId();
-                        string outPin = !string.IsNullOrEmpty(act.FuncOutputPin) ? act.FuncOutputPin : "out";
-                        actionInternalWires.AppendLine($"          <Wire UId=\"{outWire}\"><IdentCon UId=\"{targetAccId}\" /><NameCon UId=\"{fnPartId}\" Name=\"{outPin}\" /></Wire>");
                     }
                     else if (act.IsBinaryMath)
                     {
@@ -6268,6 +6453,8 @@ namespace TIAgent.Services
             public int FuncCardinality { get; set; }
             public List<Tuple<string, string>> FuncInputPins { get; set; } = new List<Tuple<string, string>>();
             public string FuncOutputPin { get; set; } = "out";
+            public bool IsCascadeBox { get; set; }
+            public IfActionItem SecondBox { get; set; }
             public List<PreConvertItem> PreConverts { get; set; } = new List<PreConvertItem>();
             public List<PreCalcItem> PreCalcs { get; set; } = new List<PreCalcItem>();
         }

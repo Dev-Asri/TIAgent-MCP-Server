@@ -1,0 +1,356 @@
+<Window x:Class="TIAgentTemplateCreator.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="TIAgent Template Creator — TIA Portal Şablon &amp; Yapay Zekâ Eğitici"
+        Width="1080" Height="820"
+        MinWidth="920" MinHeight="700"
+        WindowStartupLocation="CenterScreen"
+        Background="#0F172A"
+        Foreground="#F8FAFC"
+        FontFamily="Segoe UI">
+
+    <Window.Resources>
+        <!-- Colors -->
+        <SolidColorBrush x:Key="BgDark" Color="#0F172A"/>
+        <SolidColorBrush x:Key="CardBg" Color="#1E293B"/>
+        <SolidColorBrush x:Key="CardBorder" Color="#334155"/>
+        <SolidColorBrush x:Key="TextMain" Color="#F8FAFC"/>
+        <SolidColorBrush x:Key="TextMuted" Color="#94A3B8"/>
+        <SolidColorBrush x:Key="PrimaryTeal" Color="#0D9488"/>
+        <SolidColorBrush x:Key="PrimaryTealHover" Color="#0F766E"/>
+        <SolidColorBrush x:Key="AccentBlue" Color="#3B82F6"/>
+        <SolidColorBrush x:Key="SuccessGreen" Color="#10B981"/>
+        <SolidColorBrush x:Key="WarnAmber" Color="#F59E0B"/>
+        <SolidColorBrush x:Key="ConsoleBg" Color="#0B0F19"/>
+
+        <!-- Primary Button Style -->
+        <Style x:Key="PrimaryBtn" TargetType="Button">
+            <Setter Property="Background" Value="#0D9488"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="Padding" Value="16,8"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bd" Background="{TemplateBinding Background}" CornerRadius="6" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#0F766E"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="Bd" Property="Background" Value="#475569"/>
+                                <Setter Property="Foreground" Value="#94A3B8"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Secondary Outline Button -->
+        <Style x:Key="SecondaryBtn" TargetType="Button">
+            <Setter Property="Background" Value="#334155"/>
+            <Setter Property="Foreground" Value="#F8FAFC"/>
+            <Setter Property="FontWeight" Value="Medium"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Padding" Value="12,6"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bd" Background="{TemplateBinding Background}" CornerRadius="6" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#475569"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.5"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- CheckBox Style -->
+        <Style TargetType="CheckBox">
+            <Setter Property="Foreground" Value="#E2E8F0"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+            <Setter Property="Margin" Value="0,3,10,3"/>
+        </Style>
+
+        <!-- TabControl Dark Style -->
+        <Style TargetType="TabItem">
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TabItem">
+                        <Border x:Name="TabBorder" Background="#1E293B" BorderBrush="#334155" BorderThickness="1,1,1,0" CornerRadius="6,6,0,0" Padding="14,8" Margin="0,0,4,0" Cursor="Hand">
+                            <ContentPresenter ContentSource="Header" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="TabBorder" Property="Background" Value="#0D9488"/>
+                                <Setter Property="Foreground" Value="White"/>
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="False">
+                                <Setter Property="Foreground" Value="#94A3B8"/>
+                            </Trigger>
+                            <MultiTrigger>
+                                <MultiTrigger.Conditions>
+                                    <Condition Property="IsMouseOver" Value="True"/>
+                                    <Condition Property="IsSelected" Value="False"/>
+                                </MultiTrigger.Conditions>
+                                <Setter TargetName="TabBorder" Property="Background" Value="#334155"/>
+                                <Setter Property="Foreground" Value="#F8FAFC"/>
+                            </MultiTrigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
+
+    <Grid Margin="16">
+        <Grid.RowDefinitions>
+            <!-- Header -->
+            <RowDefinition Height="Auto"/>
+            <!-- Content -->
+            <RowDefinition Height="*"/>
+            <!-- Footer Progress & Actions -->
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Header -->
+        <Border Grid.Row="0" Background="#1E293B" BorderBrush="#334155" BorderThickness="1" CornerRadius="8" Padding="14,10" Margin="0,0,0,12">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <StackPanel Grid.Column="0">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="⚡ TIAgent Template Creator" FontSize="17" FontWeight="Bold" Foreground="#38BDF8"/>
+                        <Border Background="#064E3B" CornerRadius="4" Padding="6,2" Margin="10,0,0,0" VerticalAlignment="Center">
+                            <TextBlock Text="AI Training &amp; Batch Extractor" FontSize="11" FontWeight="SemiBold" Foreground="#34D399"/>
+                        </Border>
+                        <Border Background="#1E3A8A" CornerRadius="4" Padding="6,2" Margin="8,0,0,0" VerticalAlignment="Center">
+                            <TextBlock Text="🔒 %100 Read-Only (Asla Değiştirmez)" FontSize="11" FontWeight="SemiBold" Foreground="#93C5FD"/>
+                        </Border>
+                    </StackPanel>
+                    <TextBlock Text="TIA Portal projelerinizdeki blok, UDT, tag ve Ladder devrelerini salt okunur tarayarak yapay zekâyı firmanızın PLC mimarisine göre eğitir."
+                               FontSize="11.5" Foreground="#94A3B8" Margin="0,3,0,0"/>
+                </StackPanel>
+                <StackPanel Grid.Column="1" VerticalAlignment="Center" Orientation="Horizontal">
+                    <Border x:Name="StatusBadge" Background="#334155" CornerRadius="6" Padding="10,5">
+                        <TextBlock x:Name="TxtStatusBadge" Text="● Hazır" Foreground="#94A3B8" FontSize="12" FontWeight="SemiBold"/>
+                    </Border>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- Main Content Area -->
+        <Grid Grid.Row="1" Margin="0,0,0,12">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="520"/>
+                <ColumnDefinition Width="12"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- Left Mode Tabs & Settings Panel -->
+            <Grid Grid.Column="0">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="*"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+
+                <!-- Mode Selection Tabs -->
+                <TabControl x:Name="MainTabControl" Grid.Row="0" Background="Transparent" BorderThickness="0" SelectionChanged="MainTabControl_SelectionChanged">
+                    <!-- TAB 1: Canlı / Açık TIA Oturumu -->
+                    <TabItem Header="🔗 Açık TIA Oturumu">
+                        <Border Background="#1E293B" BorderBrush="#334155" BorderThickness="1" CornerRadius="0,6,6,6" Padding="14">
+                            <StackPanel>
+                                <TextBlock Text="1. TIA PORTAL BAĞLANTISI (CANLI OTURUM)" FontSize="12" FontWeight="Bold" Foreground="#38BDF8" Margin="0,0,0,8"/>
+                                
+                                <TextBlock Text="TIA Portal Sürümü:" FontSize="11.5" Foreground="#94A3B8" Margin="0,0,0,4"/>
+                                <Grid Margin="0,0,0,8">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <ComboBox x:Name="CmbTiaVersion" Grid.Column="0" Height="28" SelectionChanged="CmbTiaVersion_SelectionChanged"/>
+                                    <Button Grid.Column="1" Content="🔍 Otomatik Bul" Style="{StaticResource SecondaryBtn}" Margin="6,0,0,0" Click="BtnAutoDetectVersion_Click"/>
+                                </Grid>
+
+                                <TextBlock Text="Açık TIA Portal Oturumu (Process):" FontSize="11.5" Foreground="#94A3B8" Margin="0,0,0,4"/>
+                                <Grid Margin="0,0,0,8">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <ComboBox x:Name="CmbProcesses" Grid.Column="0" Height="28"/>
+                                    <Button Grid.Column="1" Content="🔄 Yenile" Style="{StaticResource SecondaryBtn}" Margin="6,0,0,0" Click="BtnRefreshProcesses_Click"/>
+                                </Grid>
+
+                                <Button x:Name="BtnConnect" Content="🔗 TIA Portal'a Bağlan" Style="{StaticResource PrimaryBtn}" Height="32" Margin="0,2,0,12" Click="BtnConnect_Click"/>
+
+                                <TextBlock Text="2. PLC İSTASYONU SEÇİMİ" FontSize="12" FontWeight="Bold" Foreground="#38BDF8" Margin="0,0,0,6"/>
+                                <ComboBox x:Name="CmbPlcs" Height="28" Margin="0,0,0,4" SelectionChanged="CmbPlcs_SelectionChanged"/>
+                                <TextBlock x:Name="TxtPlcInfo" Text="Henüz PLC seçilmedi." FontSize="11" Foreground="#64748B"/>
+                            </StackPanel>
+                        </Border>
+                    </TabItem>
+
+                    <!-- TAB 2: Toplu Proje Klasörü (Batch Mode) -->
+                    <TabItem Header="📁 Toplu Proje Klasörü">
+                        <Border Background="#1E293B" BorderBrush="#334155" BorderThickness="1" CornerRadius="0,6,6,6" Padding="14">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="*"/>
+                                    <RowDefinition Height="Auto"/>
+                                </Grid.RowDefinitions>
+
+                                <TextBlock Grid.Row="0" Text="1. TIA PROJE KLASÖRÜ SEÇİMİ (ALT KLASÖRLER DAHİL)" FontSize="12" FontWeight="Bold" Foreground="#38BDF8" Margin="0,0,0,6"/>
+                                
+                                <Grid Grid.Row="1" Margin="0,0,0,8">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBox x:Name="TxtBatchFolder" Grid.Column="0" Height="28" Background="#0F172A" Foreground="#F8FAFC" BorderBrush="#334155" Padding="6,4" FontSize="11.5"/>
+                                    <Button Grid.Column="1" Content="📁 Gözat..." Style="{StaticResource SecondaryBtn}" Margin="6,0,0,0" Click="BtnBrowseBatchFolder_Click"/>
+                                    <Button Grid.Column="2" Content="🔍 Projeleri Tara" Style="{StaticResource PrimaryBtn}" Margin="6,0,0,0" Padding="12,4" Click="BtnScanBatchProjects_Click"/>
+                                </Grid>
+
+                                <!-- Proje Listesi -->
+                                <Border Grid.Row="2" Background="#0F172A" BorderBrush="#334155" BorderThickness="1" CornerRadius="6" Padding="4">
+                                    <DataGrid x:Name="GridBatchProjects" Background="Transparent" Foreground="#F8FAFC" RowBackground="#1E293B" AlternatingRowBackground="#162032"
+                                              AutoGenerateColumns="False" CanUserAddRows="False" HeadersVisibility="Column" GridLinesVisibility="Horizontal"
+                                              HorizontalGridLinesBrush="#334155" BorderThickness="0" FontSize="11.5" SelectionMode="Single">
+                                        <DataGrid.Columns>
+                                            <DataGridCheckBoxColumn Header="Seç" Binding="{Binding IsSelected, UpdateSourceTrigger=PropertyChanged}" Width="45"/>
+                                            <DataGridTextColumn Header="Proje Adı" Binding="{Binding ProjectName}" Width="*" IsReadOnly="True"/>
+                                            <DataGridTextColumn Header="Sürüm" Binding="{Binding DisplayVersion}" Width="100" IsReadOnly="True"/>
+                                            <DataGridTextColumn Header="Boyut" Binding="{Binding FileSize}" Width="65" IsReadOnly="True"/>
+                                            <DataGridTextColumn Header="Durum" Binding="{Binding Status}" Width="95" IsReadOnly="True"/>
+                                        </DataGrid.Columns>
+                                    </DataGrid>
+                                </Border>
+
+                                <Grid Grid.Row="3" Margin="0,6,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                                        <Button Content="Tümünü Seç" Style="{StaticResource SecondaryBtn}" Padding="6,2" FontSize="11" Click="BtnSelectAllBatch_Click"/>
+                                        <Button Content="Seçimi Kaldır" Style="{StaticResource SecondaryBtn}" Padding="6,2" FontSize="11" Margin="6,0,0,0" Click="BtnDeselectAllBatch_Click"/>
+                                    </StackPanel>
+                                    <TextBlock x:Name="TxtBatchCountInfo" Grid.Column="1" Text="0 proje bulundu." FontSize="11" Foreground="#94A3B8" VerticalAlignment="Center"/>
+                                </Grid>
+                            </Grid>
+                        </Border>
+                    </TabItem>
+                </TabControl>
+
+                <!-- Shared Settings (Options & Target Directory) -->
+                <StackPanel Grid.Row="1" Margin="0,10,0,0">
+                    <!-- 3. Export Options -->
+                    <Border Background="#1E293B" BorderBrush="#334155" BorderThickness="1" CornerRadius="8" Padding="12" Margin="0,0,0,10">
+                        <StackPanel>
+                            <TextBlock Text="2. ÇIKARILACAK ŞABLONLAR &amp; FORMATLAR (HATIRLANIR)" FontSize="12" FontWeight="Bold" Foreground="#38BDF8" Margin="0,0,0,6"/>
+                            <WrapPanel>
+                                <CheckBox x:Name="ChkExportBlocks" Content="Program Blokları [XML]" IsChecked="True" Checked="SaveSettingsTrigger" Unchecked="SaveSettingsTrigger"/>
+                                <CheckBox x:Name="ChkExtractScl" Content="SCL &amp; Ladder Kodları (.scl, .ladder.md)" IsChecked="True" Checked="SaveSettingsTrigger" Unchecked="SaveSettingsTrigger"/>
+                                <CheckBox x:Name="ChkExportUdts" Content="Veri Tipleri (UDT) [SCL Struct]" IsChecked="True" Checked="SaveSettingsTrigger" Unchecked="SaveSettingsTrigger"/>
+                                <CheckBox x:Name="ChkExportTagTables" Content="PLC Tag Tabloları [XML + CSV]" IsChecked="True" Checked="SaveSettingsTrigger" Unchecked="SaveSettingsTrigger"/>
+                                <CheckBox x:Name="ChkExportHardware" Content="Donanım Özeti (.md)" IsChecked="True" Checked="SaveSettingsTrigger" Unchecked="SaveSettingsTrigger"/>
+                                <CheckBox x:Name="ChkGenerateAiSummary" Content="Yapay Zekâ Eğitim Kılavuzu" IsChecked="True" Checked="SaveSettingsTrigger" Unchecked="SaveSettingsTrigger"/>
+                            </WrapPanel>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- 4. Target Directory -->
+                    <Border Background="#1E293B" BorderBrush="#334155" BorderThickness="1" CornerRadius="8" Padding="12">
+                        <StackPanel>
+                            <TextBlock Text="3. HEDEF ŞABLON KLASÖRÜ (HATIRLANIR)" FontSize="12" FontWeight="Bold" Foreground="#38BDF8" Margin="0,0,0,6"/>
+                            <Grid Margin="0,0,0,2">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBox x:Name="TxtTargetDir" Grid.Column="0" Height="28" Background="#0F172A" Foreground="#F8FAFC" BorderBrush="#334155" Padding="6,4" FontSize="11.5" TextChanged="TxtTargetDir_TextChanged"/>
+                                <Button Grid.Column="1" Content="📁 Gözat..." Style="{StaticResource SecondaryBtn}" Margin="6,0,0,0" Click="BtnBrowseTarget_Click"/>
+                            </Grid>
+                            <TextBlock Text="Varsayılan: Ornekler/&lt;ProjeAdi&gt;_&lt;PLCAdi&gt; (Asla orijinal projelerin üzerine yazmaz)" FontSize="10.5" Foreground="#64748B"/>
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </Grid>
+
+            <!-- Right Terminal / Live Log Panel -->
+            <Border Grid.Column="2" Background="#1E293B" BorderBrush="#334155" BorderThickness="1" CornerRadius="8" Padding="14">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+
+                    <Grid Grid.Row="0" Margin="0,0,0,8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="📊 İŞLEM GÜNLÜĞÜ (CANLI LOG)" FontSize="12" FontWeight="Bold" Foreground="#38BDF8"/>
+                        <Button Grid.Column="1" Content="Temizle" Style="{StaticResource SecondaryBtn}" Padding="8,3" FontSize="11" Click="BtnClearLog_Click"/>
+                    </Grid>
+
+                    <Border Grid.Row="1" Background="{StaticResource ConsoleBg}" BorderBrush="#334155" BorderThickness="1" CornerRadius="6" Padding="10">
+                        <TextBox x:Name="TxtLog" Background="Transparent" Foreground="#38BDF8" BorderThickness="0" FontFamily="Consolas" FontSize="11.5"
+                                 IsReadOnly="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"/>
+                    </Border>
+                </Grid>
+            </Border>
+        </Grid>
+
+        <!-- Bottom Execution & Progress Bar -->
+        <Border Grid.Row="2" Background="#1E293B" BorderBrush="#334155" BorderThickness="1" CornerRadius="8" Padding="14,10">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,16,0">
+                    <Grid Margin="0,0,0,4">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock x:Name="TxtProgressStatus" Text="Hazır. TIA Portal projenizi seçin veya toplu klasör taraması başlatın." FontSize="12" Foreground="#94A3B8"/>
+                        <TextBlock x:Name="TxtProgressPercent" Grid.Column="1" Text="%0" FontSize="12" FontWeight="Bold" Foreground="#38BDF8"/>
+                    </Grid>
+                    <ProgressBar x:Name="ProgressBarExport" Height="8" Background="#0F172A" Foreground="#0D9488" BorderThickness="0" Minimum="0" Maximum="100" Value="0"/>
+                </StackPanel>
+
+                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Button x:Name="BtnCancel" Content="⏹ İptal Et" Style="{StaticResource SecondaryBtn}" Height="36" Padding="12,6" Margin="0,0,8,0" IsEnabled="False" Click="BtnCancel_Click"/>
+                    <Button x:Name="BtnOpenFolder" Content="📂 Klasörü Aç" Style="{StaticResource SecondaryBtn}" Height="36" Padding="12,6" Margin="0,0,8,0" IsEnabled="False" Click="BtnOpenFolder_Click"/>
+                    <Button x:Name="BtnStartExport" Content="🚀 ŞABLONLARI ÇIKAR" Style="{StaticResource PrimaryBtn}" Height="36" Padding="18,6" Click="BtnStartExport_Click"/>
+                </StackPanel>
+            </Grid>
+        </Border>
+    </Grid>
+</Window>
