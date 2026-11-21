@@ -90,6 +90,7 @@ TIAgent MCP Server'ın Siemens TIA Portal ile nasıl etkileşime girdiğini, yap
   - **Onay Bekleme (No Approval / Automatic):** Gelen paketler onay sorulmadan doğrudan TIA Portal'a aktarılır ve otomatik derlenir.
 - **Otomatik XML Yedekleme:** Herhangi bir blok güncellenmeden veya silinmeden önce mevcut bloğun eksiksiz XML kopyası zaman damgasıyla `Backups/` klasörüne arşivlenir.
 - **Rol Ayrımı Kuralı:** Çalışma alanında yapay zekânın TIAgent masaüstü C# kodlarına dokunmaması için `"Köprüsün"` (PLC otomasyon modu) ve `"Programcısın"` (TIAgent geliştirme modu) yönergeleri desteklenir.
+- **3 Aşamalı Güvenli Aktarım Mimarisi:** Büyük paketlerde (donanım, çoklu DB'ler, Know-How korumalı bloklar) TIA Portal çökmesini önlemek için paketleri otomatik olarak 3 güvenli aşamaya böler: Aşama 1: Donanım & Taglar, Aşama 2: Global DB'ler (Standard/Optimized & `<StartValue>`), Aşama 3: Program Blokları (FB/FC/Main OB1) & Derleme. Aşamalar arasında GC hafıza boşaltması uygulanır.
 - **Çift Dil Desteği:** Ana pencere ve detaylı Yardım & Protokoller penceresi Türkçe ve İngilizce dillerinde anlık olarak değiştirilebilir.
 
 ---
@@ -193,6 +194,8 @@ Cursor veya VS Code'u yeniden başlattığınızda yapay zekâ ajanınız `tiage
 | `POST` | `/api/delete` | Belirtilen blokları, tag tablolarını, cihazları veya eksenleri projeden siler. |
 | `GET` | `/api/hardware` | Projedeki tüm cihazlar, rack yuvaları, takılı modüller ve IP adresleri. |
 | `GET` | `/api/gsd?q=...` | TIA Portal GSDML deposunda sürücü, modül veya telegram arar. |
+| `POST` | `/api/split` | Büyük paketleri TIA Portal kararlılığı için güvenli 3 aşamaya böler. |
+| `GET` | `/api/stages` | Devam eden çok aşamalı aktarımların anlık durumunu döndürür. |
 | `GET` | `/swagger.json` | OpenAPI 3.0 canlı şeması (CORS ve OPTIONS 204 desteğiyle). |
 
 ---
@@ -249,6 +252,7 @@ Watch TIAgent MCP Server in action—generating Ladder logic, managing PLC tags,
   - **No Approval (Onay Bekleme):** Directly injects and compiles AI packages into TIA Portal automatically.
 - **Pre-Change XML Backup:** Every modified or deleted block is automatically backed up with a timestamp to the `Backups/` folder.
 - **Role Distinction Rule:** Supports `"Köprüsün"` (Bridge / PLC automation mode) and `"Programcısın"` (Developer mode) prompts to protect TIAgent C# source code from accidental edits.
+- **3-Stage Safe Import Architecture:** Automatically prevents TIA Portal crashes and COM handle leaks by splitting large packages into 3 isolated stages: Stage 1: Hardware & I/O Tags, Stage 2: Global DBs (Standard/Non-Optimized layout with `<StartValue>` preservation), Stage 3: Program Blocks (FB/FC/Main OB1) and full compilation. GC flushes are applied between stages.
 - **Bilingual Interface:** Real-time English and Turkish switching for both the main window and Help & Multi-Agent Protocols window.
 
 ---
@@ -299,6 +303,8 @@ Restart Cursor or VS Code, and your AI assistant will immediately recognize `tia
 | `POST` | `/api/delete` | Removes specified blocks, DBs, tag tables, devices, or technology objects. |
 | `GET` | `/api/hardware` | Lists all project devices, rack slots, plugged modules, and IP addresses. |
 | `GET` | `/api/gsd?q=...` | Searches TIA Portal GSDML repository for drives, modules, or telegrams. |
+| `POST` | `/api/split` | Splits large packages into 3 isolated safe stages for TIA Portal stability. |
+| `GET` | `/api/stages` | Returns the active status of ongoing multi-stage imports. |
 | `GET` | `/swagger.json` | Live OpenAPI 3.0 specification with full CORS and OPTIONS 204 preflight. |
 
 ---
